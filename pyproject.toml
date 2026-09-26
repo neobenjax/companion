@@ -1,0 +1,22 @@
+[project]
+name = "ambient-copilot"
+version = "0.1.0"
+description = "Ambient Multimodal Windows Copilot combining Granola-style transcription with Antigravity 2.0 Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pywebview>=6.0",
+    "pyaudiowpatch>=0.2.12.8",
+    "pynput>=1.8.0",
+    "faster-whisper>=1.0.0",
+    "torch>=2.2.0",
+    "onnxruntime>=1.18.0",
+    "google-antigravity>=0.1.19",
+    "google-genai>=2.0.0",
+    "pydantic>=2.7.0",
+    "numpy>=1.26.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

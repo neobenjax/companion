@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ambient Copilot</title>
+    <style>
+      html, body, #root {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background-color: #09090b;
+        color: #f4f4f5;
+        overflow: hidden;
+      }
+    </style>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        console.error("GLOBAL JS ERROR:", msg, "at", url, line, col, error);
+        var errDiv = document.createElement("div");
+        errDiv.style = "position:fixed;top:0;left:0;right:0;background:#dc2626;color:white;padding:12px;font-size:12px;z-index:999999;font-family:sans-serif;";
+        errDiv.innerText = "Error: " + msg + " (" + line + ":" + col + ")";
+        document.body.appendChild(errDiv);
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
