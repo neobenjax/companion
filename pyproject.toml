@@ -1,6 +1,6 @@
 [project]
 name = "ambient-copilot"
-version = "0.2.0"
+version = "0.3.0"
 description = "Ambient Multimodal Windows Copilot combining Granola-style transcription with Antigravity 2.0 Agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,9 @@ dependencies = [
     "google-genai>=2.0.0",
     "pydantic>=2.7.0",
     "numpy>=1.26.0",
+    "mss>=9.0.1",
+    "pillow>=10.2.0",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [tool.pytest.ini_options]
