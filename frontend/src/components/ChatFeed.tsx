@@ -15,6 +15,7 @@ interface ChatFeedProps {
   onScreenshotClick?: (screenshot: ScreenshotData) => void;
   onUpdateCard: (messageId: string, updatedCard: ActionCardData) => void;
   isRecording: boolean;
+  speechActivity?: { is_speaking: boolean; speaker: string };
 }
 
 export const ChatFeed: React.FC<ChatFeedProps> = ({
@@ -27,6 +28,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   onScreenshotClick,
   onUpdateCard,
   isRecording,
+  speechActivity,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -39,7 +41,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, speechActivity?.is_speaking]);
 
   const toggleThought = (msgId: string) => {
     setCollapsedThoughts((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
@@ -268,6 +270,28 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
           return null;
         })
       )}
+
+      {/* Granola-Style Animated 3-Dots Listening Indicator */}
+      {isRecording && speechActivity?.is_speaking && (
+        <div className="px-3 py-2 rounded-lg text-xs bg-zinc-900/50 border border-zinc-800/60 my-1.5 flex items-center space-x-2.5 animate-fadeIn select-none transition-all">
+          <span
+            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase select-none ${
+              speechActivity.speaker === 'caller'
+                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/50'
+                : 'bg-purple-950/80 text-purple-300 border border-purple-800/50'
+            }`}
+          >
+            {speechActivity.speaker === 'caller' ? 'Caller' : 'You'}
+          </span>
+          <div className="flex items-center space-x-1.5 py-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="text-[11px] text-zinc-400 font-medium ml-1">listening...</span>
+          </div>
+        </div>
+      )}
+
       <div ref={feedEndRef} />
     </div>
   );

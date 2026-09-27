@@ -1,8 +1,9 @@
 import time
 import queue
 import threading
+import collections
 import numpy as np
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 import pyaudiowpatch as pyaudio
 
 from backend.audio.vad import VadGate
@@ -13,8 +14,14 @@ class AudioCaptureManager:
     SAMPLE_RATE = 16000
     CHUNK_DURATION_MS = 64  # ~64ms buffer chunk
 
-    def __init__(self, transcriber: TranscriberWorker):
+    def __init__(
+        self,
+        transcriber: TranscriberWorker,
+        on_speech_activity: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ):
         self.transcriber = transcriber
+        self.on_speech_activity = on_speech_activity
+        self._is_speaking_state: Dict[str, bool] = {"me": False, "caller": False}
         self.vad_me = VadGate(sample_rate=self.SAMPLE_RATE, threshold=0.35)
         self.vad_caller = VadGate(sample_rate=self.SAMPLE_RATE, threshold=0.35)
 
@@ -34,6 +41,15 @@ class AudioCaptureManager:
 
         self.input_device_index: Optional[int] = None
         self.loopback_device_index: Optional[int] = None
+
+    def _set_speaking_state(self, speaker: str, is_speaking: bool):
+        if self._is_speaking_state.get(speaker) != is_speaking:
+            self._is_speaking_state[speaker] = is_speaking
+            if self.on_speech_activity:
+                try:
+                    self.on_speech_activity({"is_speaking": is_speaking, "speaker": speaker})
+                except Exception as e:
+                    print(f"[Capture] Error in on_speech_activity callback: {e}", flush=True)
 
     def get_audio_devices(self) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -211,6 +227,8 @@ class AudioCaptureManager:
 
     def pause(self):
         self._is_paused = True
+        self._set_speaking_state("me", False)
+        self._set_speaking_state("caller", False)
 
     def resume(self):
         self._is_paused = False
@@ -224,6 +242,8 @@ class AudioCaptureManager:
 
         self._is_recording = False
         self._is_paused = False
+        self._set_speaking_state("me", False)
+        self._set_speaking_state("caller", False)
         self._stop_event.set()
 
         # Stop and close PortAudio streams
@@ -273,6 +293,7 @@ class AudioCaptureManager:
         downmixes to mono, resamples to 16kHz, applies VAD, and pools speech chunks
         optimally (1.5s - 3.5s) for high-accuracy Whisper transcription.
         """
+        pre_speech_chunks = collections.deque(maxlen=4)  # ~256ms pre-speech onset padding
         buffer_chunks = []
         speech_frames_count = 0
         silence_frames_count = 0
@@ -293,24 +314,38 @@ class AudioCaptureManager:
             if native_channels > 1:
                 audio_np = audio_np.reshape(-1, native_channels).mean(axis=1)
 
-            # Resample to 16kHz
+            # High-fidelity linear interpolation resampling to 16kHz (anti-aliased)
             if native_rate != self.SAMPLE_RATE:
-                step = native_rate / self.SAMPLE_RATE
-                indices = np.arange(0, len(audio_np), step).astype(int)
-                indices = indices[indices < len(audio_np)]
-                audio_np = audio_np[indices]
+                target_len = int(round(len(audio_np) * self.SAMPLE_RATE / native_rate))
+                if target_len > 0:
+                    x_orig = np.linspace(0, 1, len(audio_np), endpoint=False)
+                    x_target = np.linspace(0, 1, target_len, endpoint=False)
+                    audio_np = np.interp(x_target, x_orig, audio_np).astype(np.float32)
 
             is_voice = vad_gate.is_speech(audio_np)
             if is_voice:
+                if speech_frames_count == 0:
+                    # Speech just started -> Notify UI to show animated 3 dots
+                    self._set_speaking_state(speaker, True)
+                    # Prepend pre-speech padding buffer so initial consonants aren't clipped
+                    buffer_chunks.extend(list(pre_speech_chunks))
+                    pre_speech_chunks.clear()
+
                 speech_frames_count += 1
                 silence_frames_count = 0
                 buffer_chunks.append(audio_np)
             else:
-                if speech_frames_count > 0:
+                if speech_frames_count == 0:
+                    # Rolling pre-speech onset buffer while idle
+                    pre_speech_chunks.append(audio_np)
+                else:
+                    # Speech underway, user briefly paused
                     silence_frames_count += 1
                     buffer_chunks.append(audio_np)
-                    # Emit after ~0.8s silence (13 frames) AND at least ~1.0s speech (16 frames)
-                    if silence_frames_count >= 13 and len(buffer_chunks) >= 16:
+
+                    # Emit after ~0.64s silence (10 frames) AND at least ~0.76s speech (12 frames)
+                    if silence_frames_count >= 10 and len(buffer_chunks) >= 12:
+                        self._set_speaking_state(speaker, False)
                         full_chunk = np.concatenate(buffer_chunks)
                         timestamp = time.time() - (len(full_chunk) / self.SAMPLE_RATE)
                         self.transcriber.enqueue_chunk(full_chunk, speaker=speaker, timestamp=timestamp)
@@ -318,8 +353,8 @@ class AudioCaptureManager:
                         speech_frames_count = 0
                         silence_frames_count = 0
 
-            # Cap continuous speech chunks at ~3.5s (55 frames) for fast, consistent pooling
-            if len(buffer_chunks) >= 55:
+            # Cap continuous speech chunks at ~3.2s (50 frames) for fast, consistent streaming
+            if len(buffer_chunks) >= 50:
                 full_chunk = np.concatenate(buffer_chunks)
                 timestamp = time.time() - (len(full_chunk) / self.SAMPLE_RATE)
                 self.transcriber.enqueue_chunk(full_chunk, speaker=speaker, timestamp=timestamp)

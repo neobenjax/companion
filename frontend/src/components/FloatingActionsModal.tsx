@@ -35,7 +35,7 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
         {
           id: hasAiResponse ? 'view_thread' : 'explain_image',
           key: '1',
-          title: hasAiResponse ? 'View AI Thread' : 'Explain this image using AI...',
+          title: hasAiResponse ? 'Review in AI Thread' : 'Explain this image using AI...',
           description: hasAiResponse
             ? 'Open AI visual analysis and reasoning trace in side panel'
             : 'Multimodal analysis of visual layout, UI, errors, code, and text',
@@ -73,7 +73,7 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
         {
           id: hasAiResponse ? 'view_thread' : 'ask_ai',
           key: '1',
-          title: hasAiResponse ? 'View AI Thread' : 'Ask AI about...',
+          title: hasAiResponse ? 'Review in AI Thread' : 'Ask AI about...',
           description: hasAiResponse
             ? 'Open saved AI research and explanation in side panel'
             : 'Expand, confirm, or research based on this transcription',

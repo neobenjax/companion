@@ -8,7 +8,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "vision_intent_hotkey": "<ctrl>+<shift>+v",
     "lookback_duration_sec": 10,
     "lookback_words": 50,
-    "whisper_model": "base.en",
+    "whisper_model": "small.en",
     "input_device_index": None,
     "loopback_device_index": None,
     "gemini_api_key": "",
