@@ -21,7 +21,15 @@ def start_native_app():
     config = load_config()
     bridge = CompanionBridge()
 
-    frontend_dist = (Path(__file__).parent.parent / "frontend" / "dist").resolve()
+    if getattr(sys, "frozen", False):
+        base_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    else:
+        base_dir = Path(__file__).parent.parent.resolve()
+
+    frontend_dist = (base_dir / "frontend" / "dist").resolve()
+    if not (frontend_dist / "index.html").exists() and getattr(sys, "frozen", False):
+        frontend_dist = (Path(sys.executable).parent / "frontend" / "dist").resolve()
+
     index_html = frontend_dist / "index.html"
     if not index_html.exists():
         print(f"[Desktop] ERROR: {index_html} does not exist! Please run 'npm run build' first.", flush=True)

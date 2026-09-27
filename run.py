@@ -97,6 +97,11 @@ def ensure_default_desktop():
 
 
 def main():
+    if getattr(sys, "frozen", False):
+        from backend.desktop import start_native_app
+        start_native_app()
+        return
+
     ensure_default_desktop()
     root = Path(__file__).parent.resolve()
     if str(root) not in sys.path:
