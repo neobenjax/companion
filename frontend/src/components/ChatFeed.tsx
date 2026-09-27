@@ -11,6 +11,7 @@ interface ChatFeedProps {
   messages: ChatMessage[];
   highlights?: HighlightData[];
   onHighlightClick?: (highlight: HighlightData) => void;
+  onManualHighlight?: (messageId: string, text: string, speaker: 'caller' | 'me', timestamp: number) => void;
   onScreenshotClick?: (screenshot: ScreenshotData) => void;
   onUpdateCard: (messageId: string, updatedCard: ActionCardData) => void;
   isRecording: boolean;
@@ -22,6 +23,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   messages,
   highlights = [],
   onHighlightClick,
+  onManualHighlight,
   onScreenshotClick,
   onUpdateCard,
   isRecording,
@@ -51,9 +53,9 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 select-text">
+    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
       {/* Session Header (Granola style) */}
-      <div className="pb-3 border-b border-zinc-800/80 space-y-2">
+      <div className="pb-3 border-b border-zinc-800/80 space-y-2 select-none">
         {isEditingTitle ? (
           <input
             type="text"
@@ -74,7 +76,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
           </h1>
         )}
 
-        <div className="flex items-center space-x-2 text-[11px] text-zinc-400">
+        <div className="flex items-center space-x-2 text-[11px] text-zinc-400 select-none">
           <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800">
             <Calendar size={12} className="text-zinc-500" />
             <span>Today</span>
@@ -94,7 +96,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
 
       {/* Stream Messages */}
       {messages.length === 0 ? (
-        <div className="py-16 text-center text-zinc-500 text-xs space-y-2">
+        <div className="py-16 text-center text-zinc-500 text-xs space-y-2 select-none">
           <Sparkles size={24} className="mx-auto text-purple-400/60 animate-pulse" />
           <p className="font-medium text-zinc-400">Ambient Copilot is ready.</p>
           <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
@@ -117,6 +119,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
                 }}
                 highlights={highlights}
                 onHighlightClick={onHighlightClick}
+                onManualHighlight={onManualHighlight}
               />
             );
           }
@@ -127,7 +130,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
 
           if (msg.type === 'user') {
             return (
-              <div key={msg.id} className="flex justify-end my-2">
+              <div key={msg.id} className="flex justify-end my-2 select-none">
                 <div className="max-w-[85%] px-3 py-2 rounded-lg bg-purple-600 text-white text-xs shadow">
                   <div className="flex items-center space-x-1 mb-0.5 opacity-80 text-[10px]">
                     <User size={10} />
@@ -151,7 +154,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
               <div
                 key={msg.id}
                 onClick={() => onScreenshotClick && onScreenshotClick(shot)}
-                className="my-3 p-3 rounded-xl bg-[#141418] hover:bg-[#1a1a20] border border-zinc-800 hover:border-purple-500/50 shadow-md cursor-pointer transition group"
+                className="my-3 p-3 rounded-xl bg-[#141418] hover:bg-[#1a1a20] border border-zinc-800 hover:border-purple-500/50 shadow-md cursor-pointer transition group select-none"
               >
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800/80 text-[11px]">
                   <div className="flex items-center gap-1.5 text-zinc-300 font-medium">

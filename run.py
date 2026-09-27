@@ -122,9 +122,23 @@ def main():
         finally:
             vite_proc.terminate()
     else:
-        # Build if dist doesn't exist
-        if not (dist_dir / "index.html").exists() or "--build" in sys.argv:
-            print("[Launcher] Building frontend assets for production...")
+        # Auto-detect frontend source changes or missing dist
+        needs_build = not (dist_dir / "index.html").exists() or "--build" in sys.argv
+        if not needs_build:
+            dist_mtime = (dist_dir / "index.html").stat().st_mtime
+            idx_file = frontend_dir / "index.html"
+            if idx_file.exists() and idx_file.stat().st_mtime > dist_mtime:
+                needs_build = True
+            if not needs_build:
+                src_dir = frontend_dir / "src"
+                if src_dir.exists():
+                    for f in src_dir.rglob("*"):
+                        if f.is_file() and f.stat().st_mtime > dist_mtime:
+                            needs_build = True
+                            break
+
+        if needs_build:
+            print("[Launcher] Detected frontend changes. Rebuilding production assets...", flush=True)
             subprocess.run(["npm", "run", "build"], cwd=str(frontend_dir), shell=True, check=True)
 
         from backend.desktop import start_native_app as start_app

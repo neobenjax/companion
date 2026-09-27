@@ -157,4 +157,64 @@
 - [x] Replace strict `flex-nowrap` with `flex-wrap justify-between gap-1.5` in `ControlBar.tsx`
 - [x] Ensure buttons fit on 1 row at default 560px width and wrap gracefully into 2 rows when narrowed
 
+## Phase 6: Gemini 3.8 Flash, Floating Dialog Enhancements & Manual Text Selection
+### Subtask 6.1: Gemini 3.8 Flash Migration & Token Budget Optimization
+- [x] Update `backend/agent/orchestrator.py` to use `gemini-3.8-flash` for text and multimodal queries
+- [x] Downscale screenshot payloads to max 1280px in `analyze_vision` using Pillow thumbnail to conserve tokens and API budget
+- [x] Update model selector dropdown in `SettingsModal.tsx` and defaults in `config.py` to reflect Gemini 3.8 Flash / Pro
+
+### Subtask 6.2: Always-On Floating Dialog & Dynamic Option 1
+- [x] Update `handleHighlightClick` and `handleScreenshotClick` in `App.tsx` to always present `FloatingActionsModal`
+- [x] In `FloatingActionsModal.tsx`: dynamic Option 1 ("View AI Thread" if already answered vs "Ask AI / Explain" if new)
+- [x] Wire Option 1 to directly open the Sidepanel thread when an AI answer already exists without re-calling API
+
+### Subtask 6.3: Option 4: De-select Highlight
+- [x] Add Option 4 ("De-select Highlight", hotkey `4` or `Del`) to `FloatingActionsModal.tsx`
+- [x] Implement `handleDeselectHighlight` in `App.tsx` to remove the highlight from state and delete it from SQLite database
+
+### Subtask 6.4: Single-Turn Text Selection Clamping & Right-Click Context Menu
+- [x] Scope text selection strictly to message turns; add `select-none` to images and avatars to prevent cross-turn/image bleed
+- [x] Build custom right-click context menu in `TranscriptItem.tsx` with options: `Highlight`, `Copy to Clipboard`, `Cancel`
+- [x] Trigger Floating Actions Modal with the selected text snippet when `Highlight` is chosen from context menu
+- [x] End-to-end verification, automated tests, and updated walkthrough guide
+
+## Phase 7: Markdown Transpilation, Chat AFC Migration & Lean Output Rules
+### Subtask 7.1: Frontend Markdown Transpiler Component
+- [x] Install `react-markdown` in `frontend/`
+- [x] Create `MarkdownRenderer.tsx` with sleek dark-mode styling for headings, lists, bold, inline code, and links
+- [x] Integrate `MarkdownRenderer` in `ThreadSidepanel.tsx` for `activeHighlight.ai_response` and `activeScreenshot.ai_response`
+
+### Subtask 7.2: Google GenAI Chat AFC Migration
+- [x] Migrate `client.models.generate_content` in `backend/agent/orchestrator.py` to `client.chats.create` + `chat.send_message`
+- [x] Eliminate the automatic function calling (AFC) deprecation warning in console output
+
+### Subtask 7.3: Lean Token & Output Formatting Rules
+- [x] Enforce casual tone with plain English explanations for technical terms
+- [x] Highlight text rules: bullet points only, straight to the point, no decorators, no long dashes, strictly < 150 words
+- [x] Image rules: summary first ("purpose of what user is doing or needs to know"), critical highlights, strictly < 150 words
+- [x] Configure `max_output_tokens=350` at the API config level to protect pre-paid quota
+
+### Subtask 7.4: Verification, Automated Tests & Walkthrough
+- [x] Add unit tests verifying prompt guidelines and token constraints
+- [x] Verify frontend build (`npm run build`) and backend tests (`pytest tests/`)
+- [x] Create detailed manual walkthrough testing guide for the user
+
+## Phase 8: AI Trimming Fix & Console Traceability Logging
+### Subtask 8.1: Thinking Budget Configuration & Headroom Expansion
+- [x] Remove restrictive `max_output_tokens=350` capping to restore full, complete responses from the model
+- [x] Retain casual tone, bullet points, clean formatting, and explanations in layman's terms without truncating
+
+### Subtask 8.2: Comprehensive Console Traceability Logging
+- [x] Log outbound AI requests in `analyze_intent` and `analyze_vision` (model, target, parameters, prompt, system instructions) with `flush=True`
+- [x] Log inbound AI responses and metadata (finish reason, prompt/candidate/thoughts/total token counts, word count, response text)
+
+### Subtask 8.3: Automated Tests & Verification
+- [x] Run backend unit tests (`pytest tests/`) - 14 passed
+- [x] Verified live query trace and full response output in console
+
+### Subtask 8.4: Walkthrough & User Review
+- [x] Update walkthrough guide with testing steps for console traceability and complete answers
+- [x] Review with user before staging and merging
+
+
 

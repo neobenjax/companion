@@ -32,6 +32,18 @@ def start_native_app():
     user_data_dir.mkdir(parents=True, exist_ok=True)
     print(f"[Desktop] WebView2 UserDataFolder: {user_data_dir}", flush=True)
 
+    # Purge any stale browser cache in WebView2 profile so frontend updates reflect immediately
+    default_dir = user_data_dir / "EBWebView" / "Default"
+    if default_dir.exists():
+        import shutil
+        for cache_name in ["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache"]:
+            cf = default_dir / cache_name
+            if cf.exists():
+                try:
+                    shutil.rmtree(cf, ignore_errors=True)
+                except Exception:
+                    pass
+
     width = int(config.get("window_width", 560))
     if width < 560:
         width = 560

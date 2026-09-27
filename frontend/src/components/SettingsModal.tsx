@@ -259,8 +259,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-purple-600/60"
                 defaultValue="gemini"
               >
-                <option value="gemini">Google Gemini 2.0 Flash (Recommended, Native Vision & Multimodal)</option>
-                <option value="gemini_pro">Google Gemini 1.5 Pro (Deep Reasoning)</option>
+                <option value="gemini">Google Gemini 3.8 Flash (Recommended, Native Vision & Low Cost)</option>
+                <option value="gemini_pro">Google Gemini 3.8 Pro (Deep Reasoning)</option>
                 <option value="claude" disabled>Anthropic Claude 3.5 Sonnet (Coming Soon)</option>
                 <option value="openai" disabled>OpenAI GPT-4o / Codex (Coming Soon)</option>
                 <option value="ollama" disabled>Local Ollama / Llama 3.2 Vision (Coming Soon)</option>
@@ -302,7 +302,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {formData.gemini_api_key.trim() ? (
                 <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 pt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Live Agent Ready (Connected to Google Antigravity & Gemini 2.0)</span>
+                  <span>Live Agent Ready (Connected to Google Antigravity & Gemini 3.8 Flash)</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90 pt-0.5">

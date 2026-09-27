@@ -28,7 +28,7 @@ class AgentOrchestrator:
             config = antigravity.AgentConfig(
                 model=antigravity.ModelTarget(
                     endpoint=endpoint,
-                    model_type="gemini-2.5-flash",
+                    model_type="gemini-3.8-flash",
                 ),
                 system_instructions="You are an ambient multimodal Windows Copilot companion inspired by Granola and Antigravity 2.0. "
                                     "When given an excerpt of speech or user text, answer the explicit question, math calculation, "
@@ -103,31 +103,69 @@ class AgentOrchestrator:
         if self._sdk_agent:
             try:
                 thought = "Analyzing speech context via Google Antigravity Agent..."
-                prompt = (
-                    "You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity 2.0).\n"
-                    "The user triggered an intent on the following conversation excerpt:\n"
-                    f'"""\n{text_excerpt}\n"""\n\n'
-                    "TASK:\n"
-                    "1. Detect the core question, query, confusion, calculation, or task in the excerpt (especially from the latest speaker).\n"
-                    "2. Answer directly and concisely in markdown. Explain terms, solve calculations, or clarify concepts immediately.\n"
-                    "3. Do NOT repeat the full transcript. Start directly with the answer/explanation."
+                system_instruction = (
+                    "You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity).\n"
+                    "Tone & Style:\n"
+                    "- Casual, clear, and friendly.\n"
+                    "- Explain any technical words or concepts in simple layman's terms so any reader can understand.\n"
+                    "Formatting:\n"
+                    "- Summarize the key information using clear bullet points.\n"
+                    "- Straight to the point without conversational filler, long dashes (like --- or —), or decorators.\n"
+                    "- Provide complete, well-formed, and comprehensive explanations."
                 )
 
-                # Try calling SDK
-                if hasattr(self._sdk_agent, "generate_content"):
+                print("\n" + "=" * 70, flush=True)
+                print(">>> [AI AGENT REQUEST: TEXT INTENT] >>>", flush=True)
+                print(f"  Model: gemini-3.8-flash", flush=True)
+                print(f"  Topic / Query: {text_excerpt}", flush=True)
+                print(f"  Parameters: temperature=0.3", flush=True)
+                print(f"  System Instruction:\n    {system_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
+                print("=" * 70, flush=True)
+
+                # Try calling SDK using Chat interface to eliminate AFC warning
+                if hasattr(self._sdk_agent, "chats"):
+                    from google.genai import types
+                    chat = self._sdk_agent.chats.create(
+                        model="gemini-3.8-flash",
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            temperature=0.3,
+                        ),
+                    )
+                    resp = chat.send_message(f"Explain or answer this meeting topic:\n{text_excerpt}")
+                    content = resp.text
+                elif hasattr(self._sdk_agent, "generate_content"):
                     resp = self._sdk_agent.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=prompt,
+                        model="gemini-3.8-flash",
+                        contents=f"{system_instruction}\n\nMeeting topic:\n{text_excerpt}",
                     )
                     content = resp.text
                 elif hasattr(self._sdk_agent, "models"):
                     resp = self._sdk_agent.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=prompt,
+                        model="gemini-3.8-flash",
+                        contents=f"{system_instruction}\n\nMeeting topic:\n{text_excerpt}",
                     )
                     content = resp.text
                 else:
                     content = str(self._sdk_agent)
+                    resp = None
+
+                # Traceability logging for received response and metadata
+                usage = getattr(resp, "usage_metadata", None) if resp else None
+                candidates = getattr(resp, "candidates", None) if resp else None
+                finish_reason = candidates[0].finish_reason if (candidates and len(candidates) > 0) else "N/A"
+                prompt_tokens = getattr(usage, "prompt_token_count", "N/A") if usage else "N/A"
+                candidates_tokens = getattr(usage, "candidates_token_count", "N/A") if usage else "N/A"
+                thoughts_tokens = getattr(usage, "thoughts_token_count", "N/A") if usage else "N/A"
+                total_tokens = getattr(usage, "total_token_count", "N/A") if usage else "N/A"
+
+                print("\n" + "=" * 70, flush=True)
+                print("<<< [AI AGENT RESPONSE: TEXT INTENT] <<<", flush=True)
+                print(f"  Finish Reason: {finish_reason}", flush=True)
+                print(f"  Token Metadata: Prompt={prompt_tokens}, Candidates={candidates_tokens}, Thoughts={thoughts_tokens}, Total={total_tokens}", flush=True)
+                print(f"  Response Word Count: {len(content.split())} words", flush=True)
+                print(f"  Response Content:\n{content}", flush=True)
+                print("=" * 70 + "\n", flush=True)
 
                 action_cards.append({
                     "actionId": f"act_{int(now * 1000)}_copy",
@@ -144,7 +182,7 @@ class AgentOrchestrator:
                     "highlight_segment_ids": segment_ids or [],
                 }
             except Exception as e:
-                print(f"[AgentOrchestrator] Error invoking cloud agent: {e}. Using local heuristic.")
+                print(f"[AgentOrchestrator] Error invoking cloud agent: {e}. Using local heuristic.", flush=True)
 
         # Local intelligent heuristic fallback (works 100% offline!)
         thought = "Processed conversation intent locally. Identified key topic."
@@ -223,36 +261,84 @@ class AgentOrchestrator:
             try:
                 from PIL import Image
                 from google import genai
+                from google.genai import types
                 client = genai.Client(api_key=self.api_key)
                 img = Image.open(image_path)
 
-                system_prompt = (
-                    "You are an ambient multimodal Windows Copilot companion inspired by Antigravity 2.0. "
-                    "Analyze the provided screenshot with high precision. Identify key applications, code, dialogs, "
-                    "error messages, charts, or text visible. Deliver a structured, highly useful breakdown."
+                # In-memory thumbnail optimization strictly for AI query payload (max 1280px)
+                # This drastically reduces multimodal token consumption to protect pre-paid billing budget.
+                # The original full-res disk file and Windows clipboard remain 100% untouched.
+                ai_img = img.copy()
+                max_dim = 1280
+                if ai_img.width > max_dim or ai_img.height > max_dim:
+                    ai_img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+                vision_instruction = (
+                    "You are an ambient multimodal Windows Copilot companion.\n"
+                    "Analyze the provided screenshot with high precision.\n"
+                    "RULES:\n"
+                    "- Summary First: Begin with 1-2 concise sentences stating the purpose of what the user is doing or needs to know from the image.\n"
+                    "- Highlights: Use short bullet points to highlight only the most critical parts (active window, key content, errors, code, or data).\n"
+                    "- Tone: Casual and plain English. If technical terms are present, explain what they mean simply in layman's terms.\n"
+                    "- Formatting: No decorators, no long dashes (like --- or —). Provide a complete and well-structured breakdown."
                 )
 
-                resp = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[img, f"{system_prompt}\n\nTask: {prompt}"],
+                print("\n" + "=" * 70, flush=True)
+                print(">>> [AI AGENT REQUEST: VISION ANALYSIS] >>>", flush=True)
+                print(f"  Model: gemini-3.8-flash", flush=True)
+                print(f"  Target: {target_name}", flush=True)
+                print(f"  Image: {image_path} (Optimized Payload: {ai_img.width}x{ai_img.height})", flush=True)
+                print(f"  User Prompt: {prompt if prompt else 'Default analysis'}", flush=True)
+                print(f"  Parameters: temperature=0.3", flush=True)
+                print(f"  System Instruction:\n    {vision_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
+                print("=" * 70, flush=True)
+
+                chat = client.chats.create(
+                    model="gemini-3.8-flash",
+                    config=types.GenerateContentConfig(
+                        system_instruction=vision_instruction,
+                        temperature=0.3,
+                    ),
                 )
+                user_msg = [ai_img, prompt if prompt else f"What is happening in this '{target_name}' snapshot?"]
+                resp = chat.send_message(user_msg)
                 content = resp.text
+
+                # Traceability logging for received response and metadata
+                usage = getattr(resp, "usage_metadata", None)
+                candidates = getattr(resp, "candidates", None)
+                finish_reason = candidates[0].finish_reason if (candidates and len(candidates) > 0) else "N/A"
+                prompt_tokens = getattr(usage, "prompt_token_count", "N/A") if usage else "N/A"
+                candidates_tokens = getattr(usage, "candidates_token_count", "N/A") if usage else "N/A"
+                thoughts_tokens = getattr(usage, "thoughts_token_count", "N/A") if usage else "N/A"
+                total_tokens = getattr(usage, "total_token_count", "N/A") if usage else "N/A"
+
+                print("\n" + "=" * 70, flush=True)
+                print("<<< [AI AGENT RESPONSE: VISION ANALYSIS] <<<", flush=True)
+                print(f"  Finish Reason: {finish_reason}", flush=True)
+                print(f"  Token Metadata: Prompt={prompt_tokens}, Candidates={candidates_tokens}, Thoughts={thoughts_tokens}, Total={total_tokens}", flush=True)
+                print(f"  Response Word Count: {len(content.split())} words", flush=True)
+                print(f"  Response Content:\n{content}", flush=True)
+                print("=" * 70 + "\n", flush=True)
+
                 return {
-                    "thought": f"Analyzed screenshot with Gemini 2.0 Flash. Extracted visual layout and elements from '{target_name}'.",
+                    "thought": f"Analyzed screenshot with Gemini 3.8 Flash (payload optimized to {ai_img.width}x{ai_img.height} for token economy). Extracted visual layout and elements from '{target_name}'.",
                     "content": content,
                 }
             except Exception as e:
-                print(f"[AgentOrchestrator] Error calling Gemini vision API: {e}")
+                print(f"[AgentOrchestrator] Error calling Gemini vision API: {e}", flush=True)
+                return {
+                    "thought": f"Gemini API Error: {e}",
+                    "content": f"### Gemini Vision API Error\n\nCould not analyze `{target_name}` with **Gemini 3.8 Flash**:\n\n> *{e}*\n\nPlease verify your API key, billing quota, or network connection in **Settings**.",
+                }
 
         # Offline Sandbox response
         return {
             "thought": f"Sandbox Mode: Visual snapshot of '{target_name}' processed locally. High-resolution buffer saved.",
             "content": (
-                f"### Vision Analysis (Sandbox Mode)\n\n"
-                f"**Target Captured:** `{target_name}`\n\n"
-                f"**Visual Snapshot Stored Successfully:**\n"
-                f"- High-resolution visual capture was completed.\n"
-                f"- To query **Google Gemini 2.0 Flash** directly on this image, add your Gemini API key in **Settings** (Click the ⚙️ icon in the title bar).\n\n"
-                f"*(You can also use **Copy to Clipboard** to paste this screenshot into any other app)*"
+                f"**Purpose:** Viewing target `{target_name}` with offline sandbox mode active.\n\n"
+                f"* **Captured Window:** `{target_name}` ({os.path.basename(image_path)})\n"
+                f"* **Status:** High-resolution image saved to local storage\n"
+                f"* **Action:** Add your Gemini API key in Settings (⚙️ icon) to enable live visual explanations"
             ),
         }

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { HighlightData, ScreenshotData } from '../types';
 import { pywebviewService } from '../services/pywebview';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ThreadSidepanelProps {
   highlights: HighlightData[];
@@ -237,9 +238,7 @@ export const ThreadSidepanel: React.FC<ThreadSidepanelProps> = ({
                   <p className="text-xs">Analyzing visual details with Gemini Vision Agent...</p>
                 </div>
               ) : activeScreenshot.ai_response ? (
-                <div className="text-xs text-zinc-200 leading-relaxed font-sans whitespace-pre-wrap">
-                  {activeScreenshot.ai_response}
-                </div>
+                <MarkdownRenderer content={activeScreenshot.ai_response} />
               ) : (
                 <div className="py-6 text-center text-xs text-zinc-400">
                   Select <strong className="text-zinc-200">Explain this image</strong> to query the AI Agent.
@@ -358,9 +357,7 @@ export const ThreadSidepanel: React.FC<ThreadSidepanelProps> = ({
                   <p className="text-xs">Analyzing and expanding with Antigravity Agent...</p>
                 </div>
               ) : activeHighlight.ai_response ? (
-                <div className="text-xs text-zinc-200 leading-relaxed font-sans whitespace-pre-wrap">
-                  {activeHighlight.ai_response}
-                </div>
+                <MarkdownRenderer content={activeHighlight.ai_response} />
               ) : (
                 <div className="py-6 text-center text-xs text-zinc-400">
                   No AI explanation generated yet for this highlight.

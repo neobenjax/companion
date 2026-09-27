@@ -449,16 +449,38 @@ export const App: React.FC = () => {
     }
   };
 
-  // Click on a highlighted text in chat
+  // Manual text selection highlight from context menu
+  const handleManualHighlight = (
+    messageId: string,
+    text: string,
+    speaker: 'caller' | 'me',
+    timestamp: number
+  ) => {
+    const newHighlight: HighlightData = {
+      id: `hl_${Date.now()}`,
+      messageId,
+      text: text.trim(),
+      speaker: speaker || 'caller',
+      timestamp: timestamp || Date.now() / 1000,
+      created_at: Date.now() / 1000,
+      is_saved: false,
+    };
+
+    setHighlights((prev) => {
+      const next = [...prev, newHighlight];
+      if (activeSessionRef.current) {
+        pywebviewService.saveHighlight(activeSessionRef.current.id, newHighlight);
+      }
+      return next;
+    });
+
+    // Automatically prompt with floating actions modal!
+    setActiveHighlightForModal(newHighlight);
+  };
+
+  // Click on a highlighted text in chat - always prompt with floating actions modal
   const handleHighlightClick = (hl: HighlightData) => {
-    if (hl.ai_response) {
-      // Already has AI response -> open directly in AI Thread
-      setActiveThreadHighlightId(hl.id);
-      handleToggleSidepanel(true);
-    } else {
-      // Prompt with floating actions modal
-      setActiveHighlightForModal(hl);
-    }
+    setActiveHighlightForModal(hl);
   };
 
   // Floating Actions: 1. Ask AI about...
@@ -513,13 +535,7 @@ export const App: React.FC = () => {
   };
 
   const handleScreenshotClick = (shot: ScreenshotData) => {
-    if (shot.ai_response) {
-      setActiveThreadScreenshot(shot);
-      setActiveThreadHighlightId(null);
-      handleToggleSidepanel(true);
-    } else {
-      setActiveScreenshotForModal(shot);
-    }
+    setActiveScreenshotForModal(shot);
   };
 
   const handleScreenshotAskAi = async (shot: ScreenshotData) => {
@@ -683,6 +699,7 @@ export const App: React.FC = () => {
             messages={messages}
             highlights={highlights}
             onHighlightClick={handleHighlightClick}
+            onManualHighlight={handleManualHighlight}
             onScreenshotClick={handleScreenshotClick}
             onUpdateCard={handleUpdateCard}
             isRecording={recordingState.is_recording}
@@ -693,6 +710,12 @@ export const App: React.FC = () => {
             <FloatingActionsModal
               screenshot={activeScreenshotForModal}
               onAskAi={(item) => handleScreenshotAskAi(item as ScreenshotData)}
+              onViewAiThread={(item) => {
+                setActiveScreenshotForModal(null);
+                setActiveThreadScreenshot(item as ScreenshotData);
+                setActiveThreadHighlightId(null);
+                handleToggleSidepanel(true);
+              }}
               onCopy={(item) => handleScreenshotCopy(item as ScreenshotData)}
               onDeleteScreenshot={handleScreenshotDelete}
               onDismiss={() => setActiveScreenshotForModal(null)}
@@ -704,8 +727,18 @@ export const App: React.FC = () => {
             <FloatingActionsModal
               highlight={activeHighlightForModal}
               onAskAi={(item) => handleModalAskAi(item as HighlightData)}
+              onViewAiThread={(item) => {
+                setActiveHighlightForModal(null);
+                setActiveThreadHighlightId((item as HighlightData).id);
+                setActiveThreadScreenshot(null);
+                handleToggleSidepanel(true);
+              }}
               onCopy={(item) => handleModalCopy(item as HighlightData)}
               onSaveForLater={handleModalSaveForLater}
+              onDeselectHighlight={(hl) => {
+                setActiveHighlightForModal(null);
+                handleDeleteHighlight(hl.id);
+              }}
               onDismiss={() => setActiveHighlightForModal(null)}
             />
           )}

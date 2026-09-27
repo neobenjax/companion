@@ -6,9 +6,11 @@ interface FloatingActionsModalProps {
   highlight?: HighlightData | null;
   screenshot?: ScreenshotData | null;
   onAskAi: (item: HighlightData | ScreenshotData) => void;
+  onViewAiThread?: (item: HighlightData | ScreenshotData) => void;
   onCopy: (item: HighlightData | ScreenshotData) => void;
   onSaveForLater?: (highlight: HighlightData) => void;
   onDeleteScreenshot?: (screenshot: ScreenshotData) => void;
+  onDeselectHighlight?: (highlight: HighlightData) => void;
   onDismiss: () => void;
 }
 
@@ -16,25 +18,37 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
   highlight,
   screenshot,
   onAskAi,
+  onViewAiThread,
   onCopy,
   onSaveForLater,
   onDeleteScreenshot,
+  onDeselectHighlight,
   onDismiss,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
   const isScreenshot = Boolean(screenshot);
+  const hasAiResponse = Boolean(isScreenshot ? screenshot?.ai_response : highlight?.ai_response);
 
   const options = isScreenshot
     ? [
         {
-          id: 'explain_image',
+          id: hasAiResponse ? 'view_thread' : 'explain_image',
           key: '1',
-          title: 'Explain this image using AI...',
-          description: 'Multimodal analysis of visual layout, UI, errors, code, and text',
+          title: hasAiResponse ? 'View AI Thread' : 'Explain this image using AI...',
+          description: hasAiResponse
+            ? 'Open AI visual analysis and reasoning trace in side panel'
+            : 'Multimodal analysis of visual layout, UI, errors, code, and text',
           icon: Sparkles,
           iconColor: 'text-purple-400',
-          action: () => screenshot && onAskAi(screenshot),
+          action: () => {
+            if (!screenshot) return;
+            if (hasAiResponse && onViewAiThread) {
+              onViewAiThread(screenshot);
+            } else {
+              onAskAi(screenshot);
+            }
+          },
         },
         {
           id: 'copy_image',
@@ -57,13 +71,22 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
       ]
     : [
         {
-          id: 'ask_ai',
+          id: hasAiResponse ? 'view_thread' : 'ask_ai',
           key: '1',
-          title: 'Ask AI about...',
-          description: 'Expand, confirm, or research based on this transcription',
+          title: hasAiResponse ? 'View AI Thread' : 'Ask AI about...',
+          description: hasAiResponse
+            ? 'Open saved AI research and explanation in side panel'
+            : 'Expand, confirm, or research based on this transcription',
           icon: Sparkles,
           iconColor: 'text-purple-400',
-          action: () => highlight && onAskAi(highlight),
+          action: () => {
+            if (!highlight) return;
+            if (hasAiResponse && onViewAiThread) {
+              onViewAiThread(highlight);
+            } else {
+              onAskAi(highlight);
+            }
+          },
         },
         {
           id: 'copy',
@@ -83,6 +106,15 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
           iconColor: 'text-emerald-400',
           action: () => highlight && onSaveForLater?.(highlight),
         },
+        {
+          id: 'deselect_highlight',
+          key: '4',
+          title: 'De-select Highlight',
+          description: 'Remove highlight from passage and erase any saved AI research',
+          icon: Trash2,
+          iconColor: 'text-rose-400',
+          action: () => highlight && onDeselectHighlight?.(highlight),
+        },
       ];
 
   useEffect(() => {
@@ -100,6 +132,12 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
       } else if (e.key === '3' && options[2]) {
         e.preventDefault();
         options[2].action();
+      } else if (e.key === '4' && options[3]) {
+        e.preventDefault();
+        options[3].action();
+      } else if (e.key === 'Delete' && !isScreenshot && options[3]) {
+        e.preventDefault();
+        options[3].action();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onDismiss();
@@ -117,7 +155,7 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [highlight, screenshot, selectedIndex, options]);
+  }, [highlight, screenshot, selectedIndex, options, isScreenshot]);
 
   return (
     <div className="absolute bottom-20 left-3 right-3 z-40 animate-in fade-in slide-in-from-bottom-3 duration-200">

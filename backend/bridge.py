@@ -200,7 +200,7 @@ class CompanionBridge:
 
         def _worker():
             try:
-                print(f"[Bridge] Querying AI about highlight: {highlight_id} ({len(text)} chars)")
+                print(f"[Bridge] >>> Triggering AI highlight query for: '{text}' (Highlight ID: {highlight_id})", flush=True)
                 prompt = f"The user wants to expand on the following content: {text}"
                 result = self._agent.analyze_intent(
                     text_excerpt=prompt,
@@ -224,7 +224,7 @@ class CompanionBridge:
                     "action_cards": result.get("action_cards", []),
                 })
             except Exception as e:
-                print(f"[Bridge] Error in ask_ai_about_highlight: {e}")
+                print(f"[Bridge] Error in ask_ai_about_highlight: {e}", flush=True)
                 self._emit_to_ui("onHighlightAiResponse", {
                     "session_id": session_id,
                     "highlight_id": highlight_id,
@@ -320,7 +320,7 @@ class CompanionBridge:
 
         def _worker():
             try:
-                print(f"[Bridge] Explaining image with AI: {image_id} ({target_title})...")
+                print(f"[Bridge] >>> Triggering Vision AI query for: '{target_title}' (Image ID: {image_id})", flush=True)
                 result = self._agent.analyze_vision(
                     image_path=image_path,
                     prompt=prompt,
@@ -336,7 +336,7 @@ class CompanionBridge:
                     "timestamp": time.time(),
                 })
             except Exception as e:
-                print(f"[Bridge] Error in explain_image_with_ai: {e}")
+                print(f"[Bridge] Error in explain_image_with_ai: {e}", flush=True)
                 self._emit_to_ui("onVisionAiResponse", {
                     "session_id": session_id,
                     "image_id": image_id,
