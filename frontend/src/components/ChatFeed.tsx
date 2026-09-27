@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Calendar, Users, Sparkles, ChevronDown, ChevronUp, Bot, User, Zap } from 'lucide-react';
-import { ChatMessage, TranscriptSegment, ActionCardData, HighlightData } from '../types';
+import { ChatMessage, TranscriptSegment, ActionCardData, HighlightData, ScreenshotData } from '../types';
 import { TranscriptItem } from './TranscriptItem';
 import { ActionCard } from './ActionCard';
+import { Camera, Monitor, AppWindow } from 'lucide-react';
 
 interface ChatFeedProps {
   title: string;
@@ -10,6 +11,7 @@ interface ChatFeedProps {
   messages: ChatMessage[];
   highlights?: HighlightData[];
   onHighlightClick?: (highlight: HighlightData) => void;
+  onScreenshotClick?: (screenshot: ScreenshotData) => void;
   onUpdateCard: (messageId: string, updatedCard: ActionCardData) => void;
   isRecording: boolean;
 }
@@ -20,6 +22,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   messages,
   highlights = [],
   onHighlightClick,
+  onScreenshotClick,
   onUpdateCard,
   isRecording,
 }) => {
@@ -110,7 +113,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
                   id: msg.segmentId || msg.id,
                   timestamp: msg.timestamp,
                   speaker: msg.speaker || 'me',
-                  text: msg.content,
+                  text: msg.content || '',
                 }}
                 highlights={highlights}
                 onHighlightClick={onHighlightClick}
@@ -132,6 +135,73 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
                   </div>
                   <p>{msg.content}</p>
                 </div>
+              </div>
+            );
+          }
+
+          if (msg.type === 'screenshot' && msg.screenshot) {
+            const shot = msg.screenshot;
+            const timeStr = new Date(shot.timestamp * 1000).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const isScreen = shot.target_type === 'screen';
+
+            return (
+              <div
+                key={msg.id}
+                onClick={() => onScreenshotClick && onScreenshotClick(shot)}
+                className="my-3 p-3 rounded-xl bg-[#141418] hover:bg-[#1a1a20] border border-zinc-800 hover:border-purple-500/50 shadow-md cursor-pointer transition group"
+              >
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800/80 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-zinc-300 font-medium">
+                    {isScreen ? (
+                      <Monitor className="w-3.5 h-3.5 text-blue-400" />
+                    ) : (
+                      <AppWindow className="w-3.5 h-3.5 text-purple-400" />
+                    )}
+                    <span className="truncate max-w-[200px]" title={shot.target_title}>
+                      {shot.target_title}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-zinc-500">{timeStr}</span>
+                </div>
+
+                {/* Thumbnail Image Container */}
+                <div className="relative rounded-lg overflow-hidden bg-black/40 border border-zinc-800/60 aspect-video flex items-center justify-center group-hover:border-zinc-700 transition">
+                  {shot.thumbnail_url ? (
+                    <img
+                      src={shot.thumbnail_url}
+                      alt={shot.target_title}
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-zinc-600 gap-1 text-[10px]">
+                      <Camera className="w-6 h-6" />
+                      <span>Screenshot</span>
+                    </div>
+                  )}
+
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition backdrop-blur-[1px]">
+                    <span className="px-2.5 py-1 bg-purple-600/90 text-white text-[11px] font-medium rounded-md shadow flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      {shot.ai_response ? 'View AI Thread' : 'Actions & Explain'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* AI Response Preview if already analyzed */}
+                {shot.ai_response && (
+                  <div className="mt-2.5 pt-2 border-t border-zinc-800/60 space-y-1">
+                    <div className="flex items-center gap-1 text-[10px] font-semibold text-purple-400 uppercase tracking-wider">
+                      <Sparkles className="w-3 h-3" />
+                      <span>Vision Copilot</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">
+                      {shot.ai_response}
+                    </p>
+                  </div>
+                )}
               </div>
             );
           }

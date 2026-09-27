@@ -32,26 +32,49 @@ def start_native_app():
     user_data_dir.mkdir(parents=True, exist_ok=True)
     print(f"[Desktop] WebView2 UserDataFolder: {user_data_dir}", flush=True)
 
-    width = int(config.get("window_width", 460))
+    width = int(config.get("window_width", 560))
+    if width < 560:
+        width = 560
     height = int(config.get("window_height", 720))
     on_top = bool(config.get("always_on_top", True))
 
     # Enable native drag region from CSS class .drag-region
     webview.settings["DRAG_REGION_SELECTOR"] = ".drag-region"
 
-    # Multi-monitor coordinate detection
-    screens = webview.screens
+    # Multi-monitor coordinate detection with Primary Monitor WorkArea calibration
     x = None
     y = None
-    if screens:
-        print(f"[Desktop] Connected screens detected ({len(screens)}):", flush=True)
-        for i, s in enumerate(screens):
-            print(f"  - Screen {i}: {s.width}x{s.height} at ({s.x}, {s.y})", flush=True)
-        primary = screens[0]
-        # Position window docked to the right edge of primary screen with a 25px margin
-        x = primary.x + primary.width - width - 25
-        y = primary.y + max(20, (primary.height - height) // 2)
-        print(f"[Desktop] Docking window to Primary Screen at X={x}, Y={y}", flush=True)
+    if sys.platform == "win32":
+        try:
+            import win32api
+            import win32con
+            mons = win32api.EnumDisplayMonitors()
+            primary_mon = None
+            for m in mons:
+                info = win32api.GetMonitorInfo(m[0])
+                if info.get("Flags", 0) & win32con.MONITORINFOF_PRIMARY:
+                    primary_mon = info
+                    break
+            if not primary_mon and mons:
+                primary_mon = win32api.GetMonitorInfo(mons[0][0])
+
+            if primary_mon:
+                work_left, work_top, work_right, work_bottom = primary_mon["Work"]
+                work_w = work_right - work_left
+                work_h = work_bottom - work_top
+                x = work_right - width - 20
+                y = work_top + max(20, (work_h - height) // 2)
+                print(f"[Desktop] Docking window to Primary Screen at X={x}, Y={y} (WorkArea: {primary_mon['Work']})", flush=True)
+        except Exception as e:
+            print(f"[Desktop] Win32 primary monitor detection note: {e}", flush=True)
+
+    if x is None:
+        screens = webview.screens
+        if screens:
+            primary = screens[0]
+            x = primary.x + primary.width - width - 25
+            y = primary.y + max(20, (primary.height - height) // 2)
+            print(f"[Desktop] Fallback docking window to Screen 0 at X={x}, Y={y}", flush=True)
 
     # Create the native desktop window
     window = webview.create_window(

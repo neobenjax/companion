@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Square, Play, Pause, Send, Zap, MoreHorizontal, Mic, Sparkles } from 'lucide-react';
-import { RecordingState } from '../types';
+import React from 'react';
+import { Square, Play, Pause, Mic, Sparkles, Camera, Crosshair, Monitor, AppWindow } from 'lucide-react';
+import { RecordingState, CaptureTarget } from '../types';
 
 interface ControlBarProps {
   recordingState: RecordingState;
@@ -8,9 +8,12 @@ interface ControlBarProps {
   onPauseRecord: () => void;
   onResumeRecord: () => void;
   onStopRecord: () => void;
-  onTriggerIntent: () => void;
-  onSendMessage: (text: string) => void;
+  onTriggerHighlight: () => void;
   audioHotkey: string;
+  visionHotkey: string;
+  selectedTarget: CaptureTarget | null;
+  onOpenTargetPicker: () => void;
+  onTakeScreenshot: () => void;
 }
 
 export const ControlBar: React.FC<ControlBarProps> = ({
@@ -19,34 +22,39 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   onPauseRecord,
   onResumeRecord,
   onStopRecord,
-  onTriggerIntent,
-  onSendMessage,
+  onTriggerHighlight,
   audioHotkey,
+  visionHotkey,
+  selectedTarget,
+  onOpenTargetPicker,
+  onTakeScreenshot,
 }) => {
-  const [inputText, setInputText] = useState('');
-
-  const handleSend = () => {
-    if (inputText.trim()) {
-      onSendMessage(inputText.trim());
-      setInputText('');
-    }
-  };
-
   const isRecording = recordingState.is_recording;
   const isPaused = recordingState.is_paused;
 
-  // Format hotkey display e.g. <ctrl>+<shift>+a -> Ctrl+Shift+A
-  const displayHotkey = audioHotkey
-    .replace(/<|>/g, '')
-    .split('+')
-    .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
-    .join('+');
+  // Format hotkey displays
+  const formatKey = (keyStr: string) =>
+    (keyStr || '')
+      .replace(/<|>/g, '')
+      .split('+')
+      .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
+      .join('+');
+
+  const displayAudioHotkey = formatKey(audioHotkey);
+  const displayVisionHotkey = formatKey(visionHotkey);
+
+  // Target label
+  const targetLabel = selectedTarget
+    ? selectedTarget.name.length > 26
+      ? selectedTarget.name.slice(0, 26) + '...'
+      : selectedTarget.name
+    : 'Select Target';
 
   return (
-    <div className="p-3 bg-zinc-950/80 border-t border-zinc-800/80 backdrop-blur-md space-y-2">
-      <div className="flex items-center space-x-2">
-        {/* Left Record Control Pill (Granola style) */}
-        <div className="flex items-center space-x-1.5 p-1 rounded-full bg-zinc-900 border border-zinc-800 shadow shrink-0">
+    <div className="p-2.5 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-md">
+      <div className="flex items-center justify-between gap-2 flex-wrap w-full">
+        {/* Record & Highlight Pill */}
+        <div className="flex items-center space-x-1 p-1 rounded-full bg-zinc-900 border border-zinc-800 shadow shrink-0 max-w-full">
           {!isRecording ? (
             <button
               onClick={onStartRecord}
@@ -87,31 +95,54 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           )}
 
           <button
-            onClick={onTriggerIntent}
+            onClick={onTriggerHighlight}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-purple-950/70 hover:bg-purple-900/80 border border-purple-800/50 text-purple-200 text-xs font-medium transition active:scale-95 shadow-sm"
-            title={`Highlight recent transcript (${displayHotkey})`}
+            title={`Highlight recent transcript (${displayAudioHotkey})`}
           >
             <Sparkles size={12} className="text-purple-400" />
-            <span>{displayHotkey} Highlight</span>
+            <span>{displayAudioHotkey} Highlight</span>
           </button>
         </div>
 
-        {/* Right Input Bar (Granola "Ask anything" style) */}
-        <div className="flex-1 relative flex items-center">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask anything or prompt copilot..."
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-4 pr-9 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-purple-600/60 shadow-inner"
-          />
+        {/* Vision Controls: Target Picker & Screenshot Trigger */}
+        <div className="flex items-center space-x-1 p-1 rounded-full bg-zinc-900 border border-zinc-800 shadow shrink-0 max-w-full">
+          {/* Target Selection Button */}
           <button
-            onClick={handleSend}
-            disabled={!inputText.trim()}
-            className="absolute right-1.5 p-1.5 rounded-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white transition active:scale-95"
+            onClick={onOpenTargetPicker}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition active:scale-95 shadow-sm ${
+              selectedTarget
+                ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-purple-500/40'
+                : 'bg-zinc-800/60 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-dashed border-zinc-700'
+            }`}
+            title="Choose a window, application, or screen to track"
           >
-            <Send size={12} />
+            {selectedTarget?.type === 'screen' ? (
+              <Monitor size={12} className="text-purple-400" />
+            ) : selectedTarget?.type === 'window' ? (
+              <AppWindow size={12} className="text-purple-400" />
+            ) : (
+              <Crosshair size={12} className="text-zinc-400" />
+            )}
+            <span className="truncate max-w-[170px]">{targetLabel}</span>
+          </button>
+
+          {/* Screenshot Button */}
+          <button
+            onClick={onTakeScreenshot}
+            disabled={!selectedTarget}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition shadow-sm ${
+              selectedTarget
+                ? 'bg-purple-600 hover:bg-purple-500 text-white active:scale-95 cursor-pointer shadow-purple-600/20 shadow-md'
+                : 'bg-zinc-800/40 text-zinc-500 border border-zinc-800/80 cursor-not-allowed opacity-60'
+            }`}
+            title={
+              selectedTarget
+                ? `Take snapshot of ${selectedTarget.name} (${displayVisionHotkey})`
+                : 'Select a target window or screen first'
+            }
+          >
+            <Camera size={12} className={selectedTarget ? 'text-white' : 'text-zinc-600'} />
+            <span>Screenshot [{displayVisionHotkey}]</span>
           </button>
         </div>
       </div>

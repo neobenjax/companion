@@ -57,16 +57,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const grouped = groupSessions(filtered);
 
   return (
-    <div className="w-64 h-full bg-zinc-900 border-r border-zinc-800 flex flex-col select-none text-zinc-300 text-xs shrink-0 z-40">
-      {/* Top Search & New note action */}
-      <div className="p-3 border-b border-zinc-800/80 space-y-2">
-        <button
-          onClick={onCreateSession}
-          className="w-full flex items-center justify-center space-x-1.5 py-1.5 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-md font-medium text-xs shadow transition active:scale-[0.98]"
-        >
-          <Plus size={14} />
-          <span>New note</span>
-        </button>
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 z-40 backdrop-blur-[1px] animate-in fade-in duration-150"
+      />
+
+      {/* Slide-over Drawer */}
+      <div className="absolute top-0 bottom-0 left-0 w-64 h-full bg-[#121216] border-r border-zinc-800/80 flex flex-col select-none text-zinc-300 text-xs z-50 shadow-2xl animate-in slide-in-from-left duration-200">
+        {/* Top Search & New note action */}
+        <div className="p-3 border-b border-zinc-800/80 space-y-2">
+          <button
+            onClick={() => {
+              onCreateSession();
+              onClose();
+            }}
+            className="w-full flex items-center justify-center space-x-1.5 py-1.5 px-3 bg-purple-600 hover:bg-purple-500 text-white rounded-md font-medium text-xs shadow transition active:scale-[0.98]"
+          >
+            <Plus size={14} />
+            <span>New note</span>
+          </button>
 
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-2.5 text-zinc-500" />
@@ -121,7 +132,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   return (
                     <div
                       key={session.id}
-                      onClick={() => onSelectSession(session.id)}
+                      onClick={() => {
+                        onSelectSession(session.id);
+                        onClose();
+                      }}
                       className={`group flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition ${
                         isActive
                           ? 'bg-zinc-800 text-zinc-100 font-medium'
@@ -170,5 +184,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
     </div>
+    </>
   );
 };

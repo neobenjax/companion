@@ -56,5 +56,24 @@ def test_session_highlights():
     assert updated_hls[0]["ai_response"] == "Semantic Kernel is an open-source SDK from Microsoft."
     assert updated_hls[0]["text"] == "semantic kernel is really easy"
 
+    # Test delete highlight
+    remaining_hls = storage.delete_highlight(sess["id"], "hl_1")
+    assert len(remaining_hls) == 0
+    assert len(storage.get_highlights(sess["id"])) == 0
+
     # Cleanup
+    storage.delete_session(sess["id"])
+
+
+def test_session_json_backup():
+    from backend.storage.session_db import BACKUP_FILE
+    import json
+    storage = SessionStorage()
+    sess = storage.create_session(title="Backup Verification Note")
+    storage.update_session(sess["id"], messages=[{"id": "m1", "content": "Backup speech chunk"}])
+    assert BACKUP_FILE.exists()
+    with open(BACKUP_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    found = any(s["id"] == sess["id"] for s in data)
+    assert found is True
     storage.delete_session(sess["id"])

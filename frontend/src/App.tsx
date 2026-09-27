@@ -6,6 +6,7 @@ import { ControlBar } from './components/ControlBar';
 import { SettingsModal } from './components/SettingsModal';
 import { FloatingActionsModal } from './components/FloatingActionsModal';
 import { ThreadSidepanel } from './components/ThreadSidepanel';
+import { TargetPickerPopover } from './components/TargetPickerPopover';
 import {
   ChatMessage,
   Session,
@@ -14,6 +15,8 @@ import {
   ActionCardData,
   TranscriptSegment,
   HighlightData,
+  CaptureTarget,
+  ScreenshotData,
 } from './types';
 import { pywebviewService } from './services/pywebview';
 
@@ -23,6 +26,10 @@ export const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [highlights, setHighlights] = useState<HighlightData[]>([]);
   const [activeHighlightForModal, setActiveHighlightForModal] = useState<HighlightData | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<CaptureTarget | null>(null);
+  const [isTargetPickerOpen, setIsTargetPickerOpen] = useState(false);
+  const [activeScreenshotForModal, setActiveScreenshotForModal] = useState<ScreenshotData | null>(null);
+  const [activeThreadScreenshot, setActiveThreadScreenshot] = useState<ScreenshotData | null>(null);
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
   const [activeThreadHighlightId, setActiveThreadHighlightId] = useState<string | null>(null);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
@@ -67,6 +74,38 @@ export const App: React.FC = () => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  // Continuous debounced auto-save (500ms) for active session messages and highlights
+  useEffect(() => {
+    if (!activeSession?.id) return;
+    const timer = setTimeout(() => {
+      pywebviewService.saveSession(
+        activeSession.id,
+        activeSession.title,
+        activeSession.notes || '',
+        messages,
+        highlights
+      );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [messages, highlights, activeSession?.id, activeSession?.title, activeSession?.notes]);
+
+  // Flush save on window unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (activeSessionRef.current) {
+        pywebviewService.saveSession(
+          activeSessionRef.current.id,
+          activeSessionRef.current.title,
+          activeSessionRef.current.notes || '',
+          messagesRef.current,
+          highlightsRef.current
+        );
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Initialize
   useEffect(() => {
@@ -152,11 +191,84 @@ export const App: React.FC = () => {
       setRecordingState(state);
     });
 
+    // Event listener: New screenshot captured
+    const unsubScreenshot = pywebviewService.onScreenshot((data: ScreenshotData) => {
+      setMessages((prev) => {
+        const next: ChatMessage[] = [
+          ...prev,
+          {
+            id: `msg_shot_${data.id}`,
+            type: 'screenshot',
+            timestamp: data.timestamp,
+            screenshot: data,
+          },
+        ];
+        if (activeSessionRef.current) {
+          pywebviewService.saveSession(
+            activeSessionRef.current.id,
+            activeSessionRef.current.title,
+            activeSessionRef.current.notes || '',
+            next
+          );
+        }
+        return next;
+      });
+      setActiveScreenshotForModal(data);
+    });
+
+    // Event listener: Vision AI analysis response
+    const unsubVisionAi = pywebviewService.onVisionAi((data: any) => {
+      setIsLoadingAi(false);
+      setMessages((prev) => {
+        const next = prev.map((m) => {
+          if (m.type === 'screenshot' && m.screenshot && m.screenshot.id === data.image_id) {
+            return {
+              ...m,
+              screenshot: {
+                ...m.screenshot,
+                ai_response: data.ai_response,
+                thought: data.thought,
+              },
+            };
+          }
+          return m;
+        });
+        if (activeSessionRef.current) {
+          pywebviewService.saveSession(
+            activeSessionRef.current.id,
+            activeSessionRef.current.title,
+            activeSessionRef.current.notes || '',
+            next
+          );
+        }
+        return next;
+      });
+      setActiveThreadScreenshot((prev) => {
+        if (prev && prev.id === data.image_id) {
+          return {
+            ...prev,
+            ai_response: data.ai_response,
+            thought: data.thought,
+          };
+        }
+        return prev;
+      });
+    });
+
+    // Event listener: Screenshot capture error (e.g. no target selected)
+    const unsubScreenshotError = pywebviewService.onScreenshotError((data: { message: string }) => {
+      console.warn('Screenshot error:', data.message);
+      setIsTargetPickerOpen(true);
+    });
+
     return () => {
       unsubTranscript();
       unsubTriggerHighlight();
       unsubHighlightAi();
       unsubState();
+      unsubScreenshot();
+      unsubVisionAi();
+      unsubScreenshotError();
     };
   }, []);
 
@@ -170,9 +282,11 @@ export const App: React.FC = () => {
       setSessions(sessList);
 
       if (sessList.length > 0) {
-        selectSession(sessList[0].id);
+        // Select the most recent session with content, or fall back to the newest session
+        const sessionToOpen = sessList.find((sess) => (sess.notes_preview || '').length > 0) || sessList[0];
+        await selectSession(sessionToOpen.id);
       } else {
-        createNewSession();
+        await createNewSession();
       }
     } catch (e) {
       console.error('Failed to load initial data:', e);
@@ -181,13 +295,26 @@ export const App: React.FC = () => {
 
   const createNewSession = async () => {
     try {
+      setIsSidebarOpen(false);
+      // Flush-save current note before creating a new session
+      if (activeSessionRef.current) {
+        await pywebviewService.saveSession(
+          activeSessionRef.current.id,
+          activeSessionRef.current.title,
+          activeSessionRef.current.notes || '',
+          messagesRef.current,
+          highlightsRef.current
+        );
+      }
       const newSess = await pywebviewService.createSession('New note');
       setSessions((prev) => [newSess, ...prev]);
       setActiveSession(newSess);
       setMessages([]);
       setHighlights([]);
       setActiveHighlightForModal(null);
+      setActiveScreenshotForModal(null);
       setActiveThreadHighlightId(null);
+      setActiveThreadScreenshot(null);
     } catch (e) {
       console.error('Failed to create session:', e);
     }
@@ -195,13 +322,32 @@ export const App: React.FC = () => {
 
   const selectSession = async (id: string) => {
     try {
+      setIsSidebarOpen(false);
+      if (!id) return;
+      if (activeSessionRef.current?.id === id) {
+        return; // Already viewing this session
+      }
+
+      // Flush-save current active session before switching
+      if (activeSessionRef.current) {
+        await pywebviewService.saveSession(
+          activeSessionRef.current.id,
+          activeSessionRef.current.title,
+          activeSessionRef.current.notes || '',
+          messagesRef.current,
+          highlightsRef.current
+        );
+      }
+
       const sess = await pywebviewService.getSession(id);
       if (sess) {
         setActiveSession(sess);
         setMessages(sess.messages || []);
         setHighlights(sess.highlights || []);
         setActiveHighlightForModal(null);
+        setActiveScreenshotForModal(null);
         setActiveThreadHighlightId(null);
+        setActiveThreadScreenshot(null);
       }
     } catch (e) {
       console.error('Failed to select session:', e);
@@ -230,7 +376,7 @@ export const App: React.FC = () => {
     const updated = { ...activeSession, title: newTitle };
     setActiveSession(updated);
     setSessions((prev) => prev.map((s) => (s.id === updated.id ? { ...s, title: newTitle } : s)));
-    pywebviewService.saveSession(updated.id, newTitle, updated.notes || '', messages);
+    pywebviewService.saveSession(updated.id, newTitle, updated.notes || '', messages, highlightsRef.current);
   };
 
   const handleUpdateCard = (msgId: string, updatedCard: ActionCardData) => {
@@ -266,7 +412,7 @@ export const App: React.FC = () => {
     const budget = wordsCount || settingsRef.current.lookback_words || 50;
 
     // Clean text: strip any leading [CALLER]: / [ME]: tags, only count speech
-    const cleanText = lastMsg.content.replace(/^\[(CALLER|ME)\]:\s*/i, '').trim();
+    const cleanText = (lastMsg.content || '').replace(/^\[(CALLER|ME)\]:\s*/i, '').trim();
     const words = cleanText.split(/\s+/);
     const excerpt = words.length <= budget ? cleanText : words.slice(-budget).join(' ');
 
@@ -343,6 +489,89 @@ export const App: React.FC = () => {
     }
   };
 
+  // Target selection and screenshot handling
+  const handleSelectTarget = async (target: CaptureTarget) => {
+    setSelectedTarget(target);
+    setIsTargetPickerOpen(false);
+    try {
+      await pywebviewService.setSelectedTarget(target);
+    } catch (e) {
+      console.error('Failed to set target:', e);
+    }
+  };
+
+  const handleTakeScreenshot = async () => {
+    if (!selectedTarget) {
+      setIsTargetPickerOpen(true);
+      return;
+    }
+    try {
+      await pywebviewService.captureSelectedTarget(selectedTarget);
+    } catch (e) {
+      console.error('Failed to capture selected target:', e);
+    }
+  };
+
+  const handleScreenshotClick = (shot: ScreenshotData) => {
+    if (shot.ai_response) {
+      setActiveThreadScreenshot(shot);
+      setActiveThreadHighlightId(null);
+      handleToggleSidepanel(true);
+    } else {
+      setActiveScreenshotForModal(shot);
+    }
+  };
+
+  const handleScreenshotAskAi = async (shot: ScreenshotData) => {
+    setActiveScreenshotForModal(null);
+    setActiveThreadScreenshot(shot);
+    setActiveThreadHighlightId(null);
+    setIsLoadingAi(true);
+    await handleToggleSidepanel(true);
+
+    if (activeSession) {
+      await pywebviewService.explainImageWithAi(
+        activeSession.id,
+        shot.id,
+        shot.image_path,
+        '',
+        shot.target_title
+      );
+    }
+  };
+
+  const handleScreenshotCopy = async (shot: ScreenshotData) => {
+    setActiveScreenshotForModal(null);
+    await pywebviewService.copyImageToClipboard(shot.image_path);
+  };
+
+  const handleScreenshotDelete = async (shot: ScreenshotData) => {
+    setActiveScreenshotForModal(null);
+    if (activeThreadScreenshot?.id === shot.id) {
+      setActiveThreadScreenshot(null);
+      handleToggleSidepanel(false);
+    }
+
+    setMessages((prev) => {
+      const next = prev.filter((m) => !(m.type === 'screenshot' && m.screenshot?.id === shot.id));
+      if (activeSessionRef.current) {
+        pywebviewService.saveSession(
+          activeSessionRef.current.id,
+          activeSessionRef.current.title,
+          activeSessionRef.current.notes || '',
+          next
+        );
+      }
+      return next;
+    });
+
+    try {
+      await pywebviewService.deleteScreenshot(shot.id, shot.image_path);
+    } catch (e) {
+      console.error('Failed to delete screenshot:', e);
+    }
+  };
+
   // Jump to transcript message and highlight briefly
   const handleJumpToTranscript = (messageId: string) => {
     const el = document.getElementById(`msg-${messageId}`);
@@ -356,16 +585,18 @@ export const App: React.FC = () => {
   };
 
   // Delete highlight
-  const handleDeleteHighlight = (highlightId: string) => {
-    setHighlights((prev) => {
-      const next = prev.filter((h) => h.id !== highlightId);
-      if (activeSession) {
-        pywebviewService.saveSession(activeSession.id, activeSession.title, activeSession.notes || '', messages);
-      }
-      return next;
-    });
+  const handleDeleteHighlight = async (highlightId: string) => {
+    const next = highlights.filter((h) => h.id !== highlightId);
+    setHighlights(next);
     if (activeThreadHighlightId === highlightId) {
       setActiveThreadHighlightId(null);
+    }
+    if (activeSessionRef.current) {
+      try {
+        await pywebviewService.deleteHighlight(activeSessionRef.current.id, highlightId);
+      } catch (e) {
+        console.error('Failed to delete highlight:', e);
+      }
     }
   };
 
@@ -452,18 +683,39 @@ export const App: React.FC = () => {
             messages={messages}
             highlights={highlights}
             onHighlightClick={handleHighlightClick}
+            onScreenshotClick={handleScreenshotClick}
             onUpdateCard={handleUpdateCard}
             isRecording={recordingState.is_recording}
           />
 
-          {/* Floating Actions Modal (Antigravity 2.0 style above dock) */}
+          {/* Floating Actions Modal (Screenshot) */}
+          {activeScreenshotForModal && (
+            <FloatingActionsModal
+              screenshot={activeScreenshotForModal}
+              onAskAi={(item) => handleScreenshotAskAi(item as ScreenshotData)}
+              onCopy={(item) => handleScreenshotCopy(item as ScreenshotData)}
+              onDeleteScreenshot={handleScreenshotDelete}
+              onDismiss={() => setActiveScreenshotForModal(null)}
+            />
+          )}
+
+          {/* Floating Actions Modal (Highlight) */}
           {activeHighlightForModal && (
             <FloatingActionsModal
               highlight={activeHighlightForModal}
-              onAskAi={handleModalAskAi}
-              onCopy={handleModalCopy}
+              onAskAi={(item) => handleModalAskAi(item as HighlightData)}
+              onCopy={(item) => handleModalCopy(item as HighlightData)}
               onSaveForLater={handleModalSaveForLater}
               onDismiss={() => setActiveHighlightForModal(null)}
+            />
+          )}
+
+          {/* Target Picker Popover */}
+          {isTargetPickerOpen && (
+            <TargetPickerPopover
+              selectedTarget={selectedTarget}
+              onSelectTarget={handleSelectTarget}
+              onClose={() => setIsTargetPickerOpen(false)}
             />
           )}
 
@@ -474,9 +726,12 @@ export const App: React.FC = () => {
             onPauseRecord={() => pywebviewService.pauseRecording()}
             onResumeRecord={() => pywebviewService.resumeRecording()}
             onStopRecord={() => pywebviewService.stopRecording()}
-            onTriggerIntent={() => pywebviewService.triggerHighlight()}
-            onSendMessage={handleSendMessage}
+            onTriggerHighlight={() => pywebviewService.triggerHighlight()}
             audioHotkey={settings.audio_intent_hotkey}
+            visionHotkey={settings.vision_intent_hotkey}
+            selectedTarget={selectedTarget}
+            onOpenTargetPicker={() => setIsTargetPickerOpen(!isTargetPickerOpen)}
+            onTakeScreenshot={handleTakeScreenshot}
           />
         </div>
 
@@ -485,18 +740,39 @@ export const App: React.FC = () => {
           <ThreadSidepanel
             highlights={highlights}
             activeHighlightId={activeThreadHighlightId}
+            activeScreenshot={activeThreadScreenshot}
             isLoadingAi={isLoadingAi}
+            sessionTitle={activeSession?.title || 'New note'}
             onSelectHighlight={(hl) => {
+              setActiveThreadScreenshot(null);
               setActiveThreadHighlightId(hl.id);
               if (!hl.ai_response && activeSession) {
                 setIsLoadingAi(true);
                 pywebviewService.askAiAboutHighlight(activeSession.id, hl.id, hl.text);
               }
             }}
-            onBackToHighlights={() => setActiveThreadHighlightId(null)}
-            onClose={() => handleToggleSidepanel(false)}
+            onBackToHighlights={() => {
+              setActiveThreadHighlightId(null);
+              setActiveThreadScreenshot(null);
+            }}
+            onClose={() => {
+              handleToggleSidepanel(false);
+              setActiveThreadScreenshot(null);
+            }}
             onJumpToTranscript={handleJumpToTranscript}
             onDeleteHighlight={handleDeleteHighlight}
+            onAskVisionFollowup={(shot, prompt) => {
+              setIsLoadingAi(true);
+              if (activeSession) {
+                pywebviewService.explainImageWithAi(
+                  activeSession.id,
+                  shot.id,
+                  shot.image_path,
+                  prompt,
+                  shot.target_title
+                );
+              }
+            }}
           />
         )}
       </div>

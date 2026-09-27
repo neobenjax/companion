@@ -13,7 +13,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "loopback_device_index": None,
     "gemini_api_key": "",
     "always_on_top": True,
-    "window_width": 460,
+    "window_width": 560,
     "window_height": 720,
     "window_x": None,
     "window_y": None,

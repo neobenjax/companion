@@ -18,7 +18,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<Settings>(settings);
   const [audioDevices, setAudioDevices] = useState<AudioDevicesResponse>({ inputs: [], loopbacks: [] });
-  const [isRecordingHotkey, setIsRecordingHotkey] = useState(false);
+  const [recordingHotkeyType, setRecordingHotkeyType] = useState<'audio' | 'vision' | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -43,7 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Keyboard shortcut recorder
   useEffect(() => {
-    if (!isRecordingHotkey) return;
+    if (!recordingHotkeyType) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
@@ -59,14 +59,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (!['control', 'shift', 'alt', 'meta'].includes(key)) {
         parts.push(key);
         const combo = parts.join('+');
-        setFormData((prev) => ({ ...prev, audio_intent_hotkey: combo }));
-        setIsRecordingHotkey(false);
+        if (recordingHotkeyType === 'audio') {
+          setFormData((prev) => ({ ...prev, audio_intent_hotkey: combo }));
+        } else if (recordingHotkeyType === 'vision') {
+          setFormData((prev) => ({ ...prev, vision_intent_hotkey: combo }));
+        }
+        setRecordingHotkeyType(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isRecordingHotkey]);
+  }, [recordingHotkeyType]);
 
   if (!isOpen) return null;
 
@@ -118,14 +122,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsRecordingHotkey(true)}
+                  onClick={() => setRecordingHotkeyType('audio')}
                   className={`px-3 py-1.5 rounded text-xs font-mono font-medium transition ${
-                    isRecordingHotkey
+                    recordingHotkeyType === 'audio'
                       ? 'bg-amber-600 text-white animate-pulse'
                       : 'bg-zinc-800 hover:bg-zinc-700 text-purple-300 border border-purple-900/40'
                   }`}
                 >
-                  {isRecordingHotkey ? 'Press Keys...' : formatHotkey(formData.audio_intent_hotkey)}
+                  {recordingHotkeyType === 'audio' ? 'Press Keys...' : formatHotkey(formData.audio_intent_hotkey)}
                 </button>
               </div>
 
@@ -134,56 +138,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="font-medium text-zinc-300">Vision Snapshot Trigger</span>
                   <p className="text-[11px] text-zinc-500">Takes window snapshot (MVP 2)</p>
                 </div>
-                <span className="px-2.5 py-1 rounded bg-zinc-800/70 text-zinc-400 text-xs font-mono">
-                  {formatHotkey(formData.vision_intent_hotkey)}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setRecordingHotkeyType('vision')}
+                  className={`px-3 py-1.5 rounded text-xs font-mono font-medium transition ${
+                    recordingHotkeyType === 'vision'
+                      ? 'bg-amber-600 text-white animate-pulse'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-purple-300 border border-purple-900/40'
+                  }`}
+                >
+                  {recordingHotkeyType === 'vision' ? 'Press Keys...' : formatHotkey(formData.vision_intent_hotkey)}
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Lookback duration and words */}
-          <div className="p-3 rounded-lg bg-zinc-950/60 border border-zinc-800/80 space-y-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-zinc-300">Speech Lookback Duration</span>
-                <span className="font-mono text-purple-400 font-semibold">{formData.lookback_duration_sec}s</span>
-              </div>
-              <p className="text-[11px] text-zinc-500">
-                Minimum time window of spoken audio analyzed when shortcut is pressed.
-              </p>
-              <input
-                type="range"
-                min="5"
-                max="60"
-                step="1"
-                value={formData.lookback_duration_sec}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, lookback_duration_sec: parseInt(e.target.value, 10) }))
-                }
-                className="w-full accent-purple-600 cursor-pointer"
-              />
+          {/* Highlight word budget */}
+          <div className="p-3 rounded-lg bg-zinc-950/60 border border-zinc-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-300">Highlight Word Budget</span>
+              <span className="font-mono text-purple-400 font-semibold">{formData.lookback_words || 50} words</span>
             </div>
-
-            <div className="space-y-1.5 pt-2 border-t border-zinc-800/50">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-zinc-300">Highlight Word Budget</span>
-                <span className="font-mono text-purple-400 font-semibold">{formData.lookback_words || 50} words</span>
-              </div>
-              <p className="text-[11px] text-zinc-500">
-                Highlights the last X words of spoken speech in the chat when the shortcut is triggered.
-              </p>
-              <input
-                type="range"
-                min="20"
-                max="200"
-                step="5"
-                value={formData.lookback_words || 50}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, lookback_words: parseInt(e.target.value, 10) }))
-                }
-                className="w-full accent-purple-600 cursor-pointer"
-              />
-            </div>
+            <p className="text-[11px] text-zinc-500">
+              Highlights the last X words of spoken speech in the chat when the shortcut is triggered.
+            </p>
+            <input
+              type="range"
+              min="20"
+              max="200"
+              step="5"
+              value={formData.lookback_words || 50}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, lookback_words: parseInt(e.target.value, 10) }))
+              }
+              className="w-full accent-purple-600 cursor-pointer"
+            />
           </div>
 
           {/* Audio Devices */}
@@ -262,31 +251,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </select>
           </div>
 
-          {/* API Key */}
-          <div className="space-y-1.5">
-            <div className="flex items-center space-x-1.5 text-zinc-300 font-semibold">
-              <KeyRound size={14} className="text-purple-400" />
-              <span>Google Antigravity / Gemini API Key</span>
-            </div>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                value={formData.gemini_api_key}
-                onChange={(e) => setFormData((prev) => ({ ...prev, gemini_api_key: e.target.value }))}
-                placeholder="AIzaSy... (Optional for cloud LLM)"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded pl-3 pr-8 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-700"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300"
+          {/* AI Provider & API Key */}
+          <div className="p-3 rounded-lg bg-zinc-950/60 border border-zinc-800/80 space-y-3">
+            <div className="space-y-1.5">
+              <span className="font-semibold text-zinc-300">AI Agent Provider</span>
+              <select
+                className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-purple-600/60"
+                defaultValue="gemini"
               >
-                {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
+                <option value="gemini">Google Gemini 2.0 Flash (Recommended, Native Vision & Multimodal)</option>
+                <option value="gemini_pro">Google Gemini 1.5 Pro (Deep Reasoning)</option>
+                <option value="claude" disabled>Anthropic Claude 3.5 Sonnet (Coming Soon)</option>
+                <option value="openai" disabled>OpenAI GPT-4o / Codex (Coming Soon)</option>
+                <option value="ollama" disabled>Local Ollama / Llama 3.2 Vision (Coming Soon)</option>
+              </select>
             </div>
-            <p className="text-[10px] text-zinc-500">
-              Leave blank to use the smart built-in offline engine (supports calculations, tasks, and summarization).
-            </p>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-1.5 text-zinc-300 font-semibold text-xs">
+                  <KeyRound size={13} className="text-purple-400" />
+                  <span>Google Gemini API Key</span>
+                </div>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-purple-400 hover:text-purple-300 underline font-medium"
+                >
+                  Get API Key →
+                </a>
+              </div>
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={formData.gemini_api_key}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, gemini_api_key: e.target.value }))}
+                  placeholder="AIzaSy... (Leave empty for Offline Sandbox)"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded pl-3 pr-8 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-purple-600/60"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showApiKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+              </div>
+
+              {formData.gemini_api_key.trim() ? (
+                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 pt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Live Agent Ready (Connected to Google Antigravity & Gemini 2.0)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90 pt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>Sandbox Mode Active (Runs offline fallback with local math & simulated reasoning)</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

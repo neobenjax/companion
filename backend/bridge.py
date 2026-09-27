@@ -12,11 +12,21 @@ from backend.audio.capture import AudioCaptureManager
 from backend.hotkeys.manager import GlobalHotkeyManager
 from backend.agent.orchestrator import AgentOrchestrator
 from backend.agent.tools import execute_tool
+from backend.vision.capture import VisionCaptureManager
+
+
+def _normalize_id(id_val: Any) -> str:
+    if isinstance(id_val, dict):
+        return str(id_val.get("id") or id_val.get("session_id") or id_val.get("0") or "")
+    if isinstance(id_val, (list, tuple)) and id_val:
+        return _normalize_id(id_val[0])
+    return str(id_val or "").strip()
 
 
 class CompanionBridge:
     """
     Two-way bridge between Python and WebView2 JavaScript.
+
     All internal non-JS members MUST be prefixed with '_' to prevent
     pywebview from attempting to introspect COM / WinForms objects.
     """
@@ -34,6 +44,10 @@ class CompanionBridge:
         )
         self._capture = AudioCaptureManager(transcriber=self._transcriber)
 
+        # Vision
+        self._vision = VisionCaptureManager()
+        self._selected_target: Optional[Dict[str, Any]] = None
+
         # Agent
         self._agent = AgentOrchestrator(api_key=self._config.get("gemini_api_key", ""))
 
@@ -46,8 +60,11 @@ class CompanionBridge:
         self._window = window
 
     def _init_hotkeys(self):
-        hotkey_str = self._config.get("audio_intent_hotkey", "<ctrl>+<shift>+a")
-        self._hotkeys.register(hotkey_str, self._on_audio_hotkey_fired)
+        audio_hotkey = self._config.get("audio_intent_hotkey", "<ctrl>+<shift>+a")
+        self._hotkeys.register(audio_hotkey, self._on_audio_hotkey_fired)
+
+        vision_hotkey = self._config.get("vision_intent_hotkey", "<ctrl>+<shift>+v")
+        self._hotkeys.register(vision_hotkey, self._on_vision_hotkey_fired)
 
     def _emit_to_ui(self, func_name: str, data: Any):
         if hasattr(self, "_emit_custom") and self._emit_custom:
@@ -70,19 +87,26 @@ class CompanionBridge:
         words = int(self._config.get("lookback_words", 50))
         self._emit_to_ui("onTriggerHighlight", {"words": words})
 
+    def _on_vision_hotkey_fired(self):
+        print("[Bridge] Global vision shortcut fired -> Capturing target")
+        self.capture_selected_target()
+
     # --- JS Exposed Methods (Only public methods without leading '_') ---
 
     def get_settings(self) -> Dict[str, Any]:
         return self._config
 
     def save_settings(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
-        old_hotkey = self._config.get("audio_intent_hotkey")
+        old_audio_hotkey = self._config.get("audio_intent_hotkey")
+        old_vision_hotkey = self._config.get("vision_intent_hotkey")
         self._config = save_config(settings_data)
 
-        # Update hotkey if changed
-        new_hotkey = self._config.get("audio_intent_hotkey")
-        if old_hotkey != new_hotkey:
-            self._hotkeys.register(new_hotkey, self._on_audio_hotkey_fired)
+        # Update hotkeys if changed
+        new_audio_hotkey = self._config.get("audio_intent_hotkey")
+        new_vision_hotkey = self._config.get("vision_intent_hotkey")
+        if old_audio_hotkey != new_audio_hotkey or old_vision_hotkey != new_vision_hotkey:
+            self._hotkeys.unregister_all()
+            self._init_hotkeys()
 
         # Update API key if changed
         api_key = self._config.get("gemini_api_key", "")
@@ -152,7 +176,7 @@ class CompanionBridge:
             curr_x = self._window.x
             curr_y = self._window.y
 
-            target_w = 860 if expand else 460
+            target_w = 960 if expand else 560
             delta = target_w - curr_w
 
             if delta != 0:
@@ -214,17 +238,30 @@ class CompanionBridge:
     def save_highlight(self, session_id: Any = None, highlight: Any = None) -> Dict[str, Any]:
         if isinstance(session_id, dict):
             d = session_id
-            session_id = d.get("session_id", "")
+            session_id = d.get("session_id") or d.get("id") or ""
             highlight = d.get("highlight", {})
-        if session_id and highlight:
-            saved_list = self._storage.add_or_update_highlight(session_id, highlight)
+        sid = _normalize_id(session_id)
+        if sid and highlight:
+            saved_list = self._storage.add_or_update_highlight(sid, highlight)
             return {"status": "saved", "highlights": saved_list}
         return {"status": "failed"}
 
-    def get_highlights(self, session_id: Any = None) -> List[Dict[str, Any]]:
+    def delete_highlight(self, session_id: Any = None, highlight_id: Any = None) -> Dict[str, Any]:
         if isinstance(session_id, dict):
-            session_id = session_id.get("session_id", "")
-        return self._storage.get_highlights(str(session_id or ""))
+            d = session_id
+            session_id = d.get("session_id") or d.get("id") or ""
+            highlight_id = d.get("highlight_id") or d.get("highlightId") or ""
+        sid = _normalize_id(session_id)
+        hid = _normalize_id(highlight_id)
+        if sid and hid:
+            updated = self._storage.delete_highlight(sid, hid)
+            return {"status": "ok", "highlights": updated}
+        return {"status": "failed"}
+
+    def get_highlights(self, session_id: Any = None) -> List[Dict[str, Any]]:
+        sid = _normalize_id(session_id)
+        return self._storage.get_highlights(sid)
+
 
     def copy_to_clipboard(self, text: Any = "") -> Dict[str, Any]:
         if isinstance(text, dict):
@@ -240,6 +277,85 @@ class CompanionBridge:
             except Exception as e:
                 print(f"[Bridge] Clipboard error: {e}")
         return {"status": "copied", "text": text_to_copy}
+
+    # Vision & Screen Capture Methods
+    def get_capture_targets(self) -> Dict[str, Any]:
+        return self._vision.list_capture_targets()
+
+    def set_selected_target(self, target_data: Any = None) -> Dict[str, Any]:
+        if isinstance(target_data, dict):
+            self._selected_target = target_data
+        return {"status": "ok", "target": self._selected_target}
+
+    def capture_selected_target(self, target_data: Any = None) -> Optional[Dict[str, Any]]:
+        target = target_data if isinstance(target_data, dict) else self._selected_target
+        if not target:
+            print("[Bridge] No capture target selected.")
+            self._emit_to_ui("onScreenshotError", {"message": "Please select a screen or application first."})
+            return None
+
+        t_type = target.get("type", "screen")
+        t_id = target.get("id") or target.get("hwnd") or target.get("index") or 1
+        t_name = target.get("name", "")
+
+        snap = self._vision.capture_target(t_type, t_id, t_name)
+        if snap:
+            self._emit_to_ui("onNewScreenshot", snap)
+        return snap
+
+    def copy_image_to_clipboard(self, image_path: Any = "") -> Dict[str, Any]:
+        if isinstance(image_path, dict):
+            image_path = image_path.get("image_path", "")
+        success = self._vision.copy_image_to_clipboard(str(image_path))
+        return {"status": "copied" if success else "failed", "success": success}
+
+    def explain_image_with_ai(self, session_id: Any = None, image_id: str = "", image_path: str = "", prompt: str = "", target_title: str = "") -> Dict[str, Any]:
+        if isinstance(session_id, dict):
+            d = session_id
+            session_id = d.get("session_id", "")
+            image_id = d.get("image_id", "")
+            image_path = d.get("image_path", "")
+            prompt = d.get("prompt", "")
+            target_title = d.get("target_title", "")
+
+        def _worker():
+            try:
+                print(f"[Bridge] Explaining image with AI: {image_id} ({target_title})...")
+                result = self._agent.analyze_vision(
+                    image_path=image_path,
+                    prompt=prompt,
+                    target_title=target_title,
+                )
+                self._emit_to_ui("onVisionAiResponse", {
+                    "session_id": session_id,
+                    "image_id": image_id,
+                    "image_path": image_path,
+                    "target_title": target_title,
+                    "ai_response": result["content"],
+                    "thought": result["thought"],
+                    "timestamp": time.time(),
+                })
+            except Exception as e:
+                print(f"[Bridge] Error in explain_image_with_ai: {e}")
+                self._emit_to_ui("onVisionAiResponse", {
+                    "session_id": session_id,
+                    "image_id": image_id,
+                    "image_path": image_path,
+                    "target_title": target_title,
+                    "error": str(e),
+                    "ai_response": f"Error analyzing screenshot: {e}",
+                    "thought": "Failed during AI inference.",
+                })
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return {"status": "started", "image_id": image_id}
+
+    def delete_screenshot(self, image_id: Any = None, image_path: str = "") -> Dict[str, Any]:
+        if isinstance(image_id, dict):
+            image_path = image_id.get("image_path", "")
+            image_id = image_id.get("image_id", "")
+        success = self._vision.delete_screenshot(str(image_path))
+        return {"status": "ok" if success else "failed", "image_id": image_id, "deleted": success}
 
     def send_user_message(self, text: str) -> Dict[str, Any]:
         result = self._agent.analyze_intent(text_excerpt=text, is_hotkey=False)
@@ -290,21 +406,50 @@ class CompanionBridge:
         self._buffer.clear()
         return sess
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return self._storage.get_session(session_id)
+    def get_session(self, session_id: Any = None) -> Optional[Dict[str, Any]]:
+        sid = _normalize_id(session_id)
+        if not sid:
+            return None
+        self._active_session_id = sid
+        self._buffer.clear()
+        return self._storage.get_session(sid)
 
-    def save_session(self, session_id: Any = None, title: str = "", notes: str = "", messages: Any = None) -> bool:
+    def save_session(
+        self,
+        session_id: Any = None,
+        title: str = "",
+        notes: str = "",
+        messages: Any = None,
+        highlights: Any = None,
+    ) -> bool:
         if isinstance(session_id, dict):
             d = session_id
-            session_id = d.get("session_id", "")
+            session_id = d.get("session_id") or d.get("id") or ""
             title = d.get("title", "")
             notes = d.get("notes", "")
             messages = d.get("messages", [])
+            highlights = d.get("highlights", None)
 
-        return self._storage.update_session(session_id, title=title, notes=notes, messages=messages or [])
+        sid = _normalize_id(session_id)
+        if not sid:
+            return False
 
-    def delete_session(self, session_id: str) -> bool:
-        return self._storage.delete_session(session_id)
+        return self._storage.update_session(
+            sid,
+            title=title if title else None,
+            notes=notes if notes is not None else None,
+            messages=messages,
+            highlights=highlights,
+        )
+
+    def delete_session(self, session_id: Any = None) -> bool:
+        sid = _normalize_id(session_id)
+        if not sid:
+            return False
+        if self._active_session_id == sid:
+            self._active_session_id = None
+            self._buffer.clear()
+        return self._storage.delete_session(sid)
 
     # Window controls
     def toggle_always_on_top(self) -> bool:

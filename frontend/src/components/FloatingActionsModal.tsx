@@ -1,70 +1,105 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Copy, Bookmark, X, Check, CornerDownLeft } from 'lucide-react';
-import { HighlightData } from '../types';
+import { Sparkles, Copy, Bookmark, X, Check, CornerDownLeft, Camera, Trash2 } from 'lucide-react';
+import { HighlightData, ScreenshotData } from '../types';
 
 interface FloatingActionsModalProps {
-  highlight: HighlightData;
-  onAskAi: (highlight: HighlightData) => void;
-  onCopy: (highlight: HighlightData) => void;
-  onSaveForLater: (highlight: HighlightData) => void;
+  highlight?: HighlightData | null;
+  screenshot?: ScreenshotData | null;
+  onAskAi: (item: HighlightData | ScreenshotData) => void;
+  onCopy: (item: HighlightData | ScreenshotData) => void;
+  onSaveForLater?: (highlight: HighlightData) => void;
+  onDeleteScreenshot?: (screenshot: ScreenshotData) => void;
   onDismiss: () => void;
 }
 
 export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
   highlight,
+  screenshot,
   onAskAi,
   onCopy,
   onSaveForLater,
+  onDeleteScreenshot,
   onDismiss,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
-  const options = [
-    {
-      id: 'ask_ai',
-      key: '1',
-      title: 'Ask AI about...',
-      description: 'Expand, confirm, or research based on this transcription',
-      icon: Sparkles,
-      iconColor: 'text-purple-400',
-      action: () => onAskAi(highlight),
-    },
-    {
-      id: 'copy',
-      key: '2',
-      title: 'Copy to Clipboard',
-      description: 'Copy highlighted fragment text directly to clipboard',
-      icon: Copy,
-      iconColor: 'text-blue-400',
-      action: () => onCopy(highlight),
-    },
-    {
-      id: 'save',
-      key: '3',
-      title: 'Save for later',
-      description: 'Archive fragment in the side panel to navigate back later',
-      icon: Bookmark,
-      iconColor: 'text-emerald-400',
-      action: () => onSaveForLater(highlight),
-    },
-  ];
+  const isScreenshot = Boolean(screenshot);
+
+  const options = isScreenshot
+    ? [
+        {
+          id: 'explain_image',
+          key: '1',
+          title: 'Explain this image using AI...',
+          description: 'Multimodal analysis of visual layout, UI, errors, code, and text',
+          icon: Sparkles,
+          iconColor: 'text-purple-400',
+          action: () => screenshot && onAskAi(screenshot),
+        },
+        {
+          id: 'copy_image',
+          key: '2',
+          title: 'Copy to Clipboard',
+          description: 'Copy original full-resolution image to Windows clipboard',
+          icon: Copy,
+          iconColor: 'text-blue-400',
+          action: () => screenshot && onCopy(screenshot),
+        },
+        {
+          id: 'delete_screenshot',
+          key: '3',
+          title: 'Delete Screenshot',
+          description: 'Erase image from chat, delete file from disk, and discard AI research',
+          icon: Trash2,
+          iconColor: 'text-red-400',
+          action: () => screenshot && onDeleteScreenshot && onDeleteScreenshot(screenshot),
+        },
+      ]
+    : [
+        {
+          id: 'ask_ai',
+          key: '1',
+          title: 'Ask AI about...',
+          description: 'Expand, confirm, or research based on this transcription',
+          icon: Sparkles,
+          iconColor: 'text-purple-400',
+          action: () => highlight && onAskAi(highlight),
+        },
+        {
+          id: 'copy',
+          key: '2',
+          title: 'Copy to Clipboard',
+          description: 'Copy highlighted fragment text directly to clipboard',
+          icon: Copy,
+          iconColor: 'text-blue-400',
+          action: () => highlight && onCopy(highlight),
+        },
+        {
+          id: 'save',
+          key: '3',
+          title: 'Save for later',
+          description: 'Archive fragment in the side panel to navigate back later',
+          icon: Bookmark,
+          iconColor: 'text-emerald-400',
+          action: () => highlight && onSaveForLater?.(highlight),
+        },
+      ];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input or textarea
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
 
       if (e.key === '1') {
         e.preventDefault();
-        onAskAi(highlight);
+        options[0]?.action();
       } else if (e.key === '2') {
         e.preventDefault();
-        onCopy(highlight);
-      } else if (e.key === '3') {
+        options[1]?.action();
+      } else if (e.key === '3' && options[2]) {
         e.preventDefault();
-        onSaveForLater(highlight);
+        options[2].action();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onDismiss();
@@ -76,37 +111,54 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
         setSelectedIndex((prev) => (prev - 1 + options.length) % options.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        options[selectedIndex].action();
+        options[selectedIndex]?.action();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [highlight, selectedIndex]);
-
-  // Truncate preview text
-  const previewText = highlight.text.length > 120 ? highlight.text.slice(0, 120) + '...' : highlight.text;
+  }, [highlight, screenshot, selectedIndex, options]);
 
   return (
     <div className="absolute bottom-20 left-3 right-3 z-40 animate-in fade-in slide-in-from-bottom-3 duration-200">
       <div className="bg-[#141416]/95 backdrop-blur-md border border-purple-500/30 rounded-xl shadow-2xl overflow-hidden p-3.5 flex flex-col gap-2.5">
-        {/* Header with preview */}
+        {/* Header Preview */}
         <div className="flex items-start justify-between gap-2 border-b border-zinc-800/80 pb-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300 mb-0.5">
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>Highlighted Passage</span>
-              <span className="text-[10px] text-zinc-400 font-normal">
-                ({highlight.speaker === 'me' ? 'You' : 'Caller'})
-              </span>
+          {isScreenshot && screenshot ? (
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src={screenshot.thumbnail_url}
+                alt="Captured Snapshot"
+                className="w-12 h-9 object-cover rounded border border-zinc-700 shrink-0 shadow"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
+                  <Camera className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="truncate">Visual Snapshot ({screenshot.target_title})</span>
+                </div>
+                <div className="text-[10px] text-zinc-400">
+                  {screenshot.width} × {screenshot.height} px • Ready for AI explanation
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-zinc-300 italic truncate" title={highlight.text}>
-              "{previewText}"
-            </p>
-          </div>
+          ) : highlight ? (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300 mb-0.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span>Highlighted Passage</span>
+                <span className="text-[10px] text-zinc-400 font-normal">
+                  ({highlight.speaker === 'me' ? 'You' : 'Caller'})
+                </span>
+              </div>
+              <p className="text-xs text-zinc-300 italic truncate" title={highlight.text}>
+                "{highlight.text.length > 120 ? highlight.text.slice(0, 120) + '...' : highlight.text}"
+              </p>
+            </div>
+          ) : null}
+
           <button
             onClick={onDismiss}
-            className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800 transition-colors"
+            className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800 transition-colors shrink-0"
             title="Skip (Esc)"
           >
             <X className="w-3.5 h-3.5" />
@@ -163,7 +215,7 @@ export const FloatingActionsModal: React.FC<FloatingActionsModalProps> = ({
           </button>
 
           <button
-            onClick={() => options[selectedIndex].action()}
+            onClick={() => options[selectedIndex]?.action()}
             className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded font-medium shadow-sm transition-colors text-xs"
           >
             <span>Submit</span>

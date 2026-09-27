@@ -33,3 +33,11 @@ def test_agent_question_intent():
     assert len(intent["action_cards"]) >= 1
     tool_names = [card["toolName"] for card in intent["action_cards"]]
     assert "web_search" in tool_names or "copy_clipboard" in tool_names
+
+
+def test_agent_vision_sandbox():
+    orchestrator = AgentOrchestrator(api_key="")
+    res = orchestrator.analyze_vision(image_path="nonexistent.png", prompt="Explain this", target_title="VS Code")
+    assert "thought" in res
+    assert "content" in res
+    assert "Sandbox Mode" in res["content"]

@@ -60,10 +60,101 @@
 - [x] End-to-end verification and updated walkthrough guide
 
 ## Phase 3: MVP 2 - Multimodal Window Tracking & Vision Copilot
-- [ ] Target window and display monitor picker UI
-- [ ] Window capture pipeline (HWND and monitor capture via Direct3D / desktopCapturer)
-- [ ] Background perceptual diffing (pHash DCT Hamming distance > 10)
-- [ ] Vision Snapshot hotkey trigger (`Win+Shift+V` / Compound `Win+Shift+C`)
-- [ ] Multimodal vision analysis (Amazon product comparison, quiz solving, data summarization)
-- [ ] Interactive action cards for vision intents
-- [ ] Verification and MVP 2 walkthrough
+### Subtask 3.1: Settings & UI Cleanups
+- [x] Remove "Speech Lookback Duration" slider/module from SettingsModal; keep "Highlight Word Budget" slider
+- [x] Add model selector dropdown (Gemini 2.0 Flash / Pro) with direct API key helper links
+- [x] Confirm sandbox fallback mode behavior when API key is unset
+
+### Subtask 3.2: Target Selection Popover & Dock Controls
+- [x] Remove "Ask anything" input box from bottom control dock
+- [x] Add "Select" button with popover menu containing "Screens" (monitors) and "Applications" (open top-level windows)
+- [x] Update button label to display active target (e.g. `🎯 VS Code` or `🖥️ Screen 1`)
+- [x] Add `Screenshot [Shortcut]` button (disabled until target selected)
+- [x] Register global vision shortcut (`Ctrl+Shift+V` / `Win+Shift+V`)
+
+### Subtask 3.3: Capture Engine & Clipboard Integration
+- [x] Build Windows GDI `PrintWindow` (PW_RENDERFULLCONTENT) capture for application windows (with auto-restore if minimized)
+- [x] Build `mss` hardware screen capture for physical monitors
+- [x] Generate session high-res PNG and thumbnail data URI
+- [x] Implement full-resolution clipboard copying via Win32 DIB / Pillow
+
+### Subtask 3.4: Chat Thumbnail & Floating Actions Modal
+- [x] Render screenshot thumbnail card in chat stream with target title, timestamp, and zoom preview
+- [x] Adapt Floating Actions Modal for screenshot mode:
+  - Option 1: "Explain this image using AI..." (`1` or `Enter`)
+  - Option 2: "Copy to Clipboard" (`2`)
+  - `Esc`: Skip
+- [x] Handle thumbnail click in chat (open stored thread if answered, or prompt options if unanswered)
+
+### Subtask 3.5: Multimodal Vision Agent & Expandable AI Thread Sidepanel
+- [x] Implement Gemini 2.0 Vision API query in `AgentOrchestrator` (with sandbox simulated fallback)
+- [x] Build Vision Thread view in Right Sidepanel with preview image, reasoning trace, and structured analysis
+- [x] Add custom follow-up prompt input in Vision Thread view
+- [x] Dynamic window expansion to 860px (expanding left) when viewing vision threads
+- [x] End-to-end verification and updated walkthrough guide
+
+## Phase 4: MVP 2 Refinements - Multi-Monitor Mixed-DPI, App Name Resolution, Controls & Persistence
+### Subtask 4.1: Mixed-DPI Multi-Monitor Hardware Calibration
+- [x] Enforce Per-Monitor DPI Awareness V2 (`SetProcessDpiAwarenessContext(-4)` & `SetThreadDpiAwarenessContext(-4)`)
+- [x] Align monitor coordinates using `EnumDisplayMonitors` physical rects to eliminate image bleeding and black space on Screen 2 and Screen 3
+- [x] Verify exact boundary capture for multi-monitor layouts (100% and 125% mixed scale)
+
+### Subtask 4.2: Window Filtering & Application Process Resolution
+- [x] Filter out cloaked windows via `DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED)`
+- [x] Filter out tool windows via `GWL_EXSTYLE` & `WS_EX_TOOLWINDOW` (eliminates ghost WhatsApp and GeForce Overlay)
+- [x] Query owning process image name (`GetWindowThreadProcessId` + `GetModuleFileNameEx`)
+- [x] Format target name as `[Application Name] - [Current Name]` (e.g. `[Antigravity] - Ambient Windows Copilot Plan`)
+
+### Subtask 4.3: Floating Actions Modal - Option 3: Delete Screenshot
+- [x] Add Option 3 (`Delete Screenshot`) to `FloatingActionsModal.tsx` (`3` or Del key)
+- [x] Implement backend `delete_screenshot` to remove PNG from `~/.ambient_copilot/media/`
+- [x] Erase screenshot message from chat feed and clear any active AI thread sidepanel
+
+### Subtask 4.4: Customizable Vision Snapshot Shortcut in Settings
+- [x] Add interactive shortcut recorder button for Vision Snapshot trigger in `SettingsModal.tsx`
+- [x] Support recording and saving custom key combinations for vision capture
+
+### Subtask 4.5: Chat Screenshot History & Note Persistence
+- [x] Persist screenshot messages to active session in SQLite on capture, AI response, and deletion
+- [x] Ensure switching session notes loads full chat history with screenshot cards, thumbnails, and AI thread metadata
+
+### Subtask 4.6: Left Panel / Sidebar Overlay & Auto-Collapse
+- [x] Convert `Sidebar` to an absolute overlay drawer with backdrop to prevent pushing/squeezing chat feed
+- [x] Automatically close sidebar upon selecting a note in `selectSession`
+
+### Subtask 4.7: Title Bar Drag vs Click Isolation
+- [x] Confine `.drag-region` strictly to the title/brand element
+- [x] Isolate control buttons from dragging (`onMouseDown={e => e.stopPropagation()}` and `no-drag`)
+
+### Subtask 4.8: Expand Window Width for Single-Row Dock Buttons
+- [x] Increase base window width to 560px (and expanded width to 960px) in config and window manager
+- [x] Adjust `ControlBar.tsx` layout with `flex-nowrap` so all 4 buttons fit neatly in a single horizontal row
+- [x] End-to-end verification and updated walkthrough guide
+
+## Phase 5: Critical Bug Fixes - Persistence, Switching, Scoped Highlights, Window Positioning & Dock Responsiveness
+### Subtask 5.1: Live Transcript Auto-Saving & Disk Backup
+- [x] Implement debounced auto-save effect in `App.tsx` saving `messages` and `highlights` on change
+- [x] Flush-save current note before session switching, on `window.beforeunload`, and before window closing
+- [x] Add JSON backup snapshot mechanism in `backend/storage/session_db.py` to `~/.ambient_copilot/backups/sessions_backup.json`
+- [x] Restore last active session (or most recent non-empty session) upon startup in `loadInitialData()`
+
+### Subtask 5.2: Chat Switching Robustness
+- [x] Add `_normalize_id` in `backend/bridge.py` for all session operations (`get_session`, `save_session`, `delete_session`, `get_highlights`)
+- [x] Update `self._active_session_id = session_id` and clear `self._buffer` upon session selection in `bridge.py`
+- [x] In `App.tsx` `selectSession(id)`: guard against re-selecting active session, flush active note, fetch target note, populate messages/highlights, and close sidebar
+
+### Subtask 5.3: Chat-Scoped Highlights & Sidepanel
+- [x] Include `highlights` in `save_session` bridge signature and persist `highlights_json` in `session_db.py`
+- [x] Add `delete_highlight(session_id, highlight_id)` IPC endpoint in backend and integrate with `handleDeleteHighlight`
+- [x] Reset active thread view (`activeThreadHighlightId = null`, `activeThreadScreenshot = null`) on note switch
+- [x] Update `ThreadSidepanel.tsx` header to display current session note title
+
+### Subtask 5.4: Multi-Monitor Window Positioning Calibration
+- [x] Calibrate initial window docking using `GetMonitorInfo` `rcWork` in logical DIP coordinates
+- [x] Ensure window sits flush on the right edge of the primary monitor without bleeding into Screen 2 (Ultrawide)
+
+### Subtask 5.5: Responsive Dock Buttons Layout
+- [x] Replace strict `flex-nowrap` with `flex-wrap justify-between gap-1.5` in `ControlBar.tsx`
+- [x] Ensure buttons fit on 1 row at default 560px width and wrap gracefully into 2 rows when narrowed
+
+
