@@ -6,10 +6,13 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 DB_FILE = Path.home() / ".ambient_copilot" / "sessions.db"
+BACKUP_DIR = Path.home() / ".ambient_copilot" / "backups"
+BACKUP_FILE = BACKUP_DIR / "sessions_backup.json"
 
 
 def init_db():
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -35,6 +38,33 @@ class SessionStorage:
     def __init__(self):
         init_db()
 
+    def backup_to_json(self):
+        """Creates a readable JSON backup of all sessions and messages."""
+        try:
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, title, created_at, updated_at, notes, messages_json, highlights_json FROM sessions ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+                data = [
+                    {
+                        "id": r[0],
+                        "title": r[1],
+                        "created_at": r[2],
+                        "updated_at": r[3],
+                        "notes": r[4],
+                        "messages": json.loads(r[5] or "[]"),
+                        "highlights": json.loads(r[6] or "[]"),
+                    }
+                    for r in rows
+                ]
+            tmp_file = BACKUP_FILE.with_suffix(".tmp")
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp_file.replace(BACKUP_FILE)
+        except Exception as e:
+            print(f"[SessionStorage] Warning: Failed to backup sessions to JSON: {e}")
+
     def create_session(self, title: str = "New note") -> Dict[str, Any]:
         session_id = f"sess_{int(time.time() * 1000)}"
         now = time.time()
@@ -45,6 +75,7 @@ class SessionStorage:
                 (session_id, title, now, now, "", json.dumps([]), json.dumps([])),
             )
             conn.commit()
+        self.backup_to_json()
         return {
             "id": session_id,
             "title": title,
@@ -123,7 +154,10 @@ class SessionStorage:
             query = f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?"
             cursor.execute(query, params)
             conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+        if success:
+            self.backup_to_json()
+        return success
 
     def add_or_update_highlight(self, session_id: str, highlight: Dict[str, Any]) -> List[Dict[str, Any]]:
         sess = self.get_session(session_id)
@@ -142,6 +176,15 @@ class SessionStorage:
         self.update_session(session_id, highlights=current)
         return current
 
+    def delete_highlight(self, session_id: str, highlight_id: str) -> List[Dict[str, Any]]:
+        sess = self.get_session(session_id)
+        if not sess:
+            return []
+        current = sess.get("highlights", [])
+        updated = [h for h in current if h.get("id") != highlight_id]
+        self.update_session(session_id, highlights=updated)
+        return updated
+
     def get_highlights(self, session_id: str) -> List[Dict[str, Any]]:
         sess = self.get_session(session_id)
         if not sess:
@@ -153,4 +196,8 @@ class SessionStorage:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+        if success:
+            self.backup_to_json()
+        return success
+

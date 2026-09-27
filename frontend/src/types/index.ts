@@ -15,11 +15,41 @@ export interface ActionCardData {
   result?: any;
 }
 
+export interface CaptureTarget {
+  id: string;
+  type: 'screen' | 'window';
+  name: string;
+  index?: number;
+  hwnd?: number;
+  width?: number;
+  height?: number;
+  is_primary?: boolean;
+}
+
+export interface CaptureTargetsResponse {
+  screens: CaptureTarget[];
+  applications: CaptureTarget[];
+}
+
+export interface ScreenshotData {
+  id: string;
+  target_type: 'screen' | 'window';
+  target_id: string;
+  target_title: string;
+  image_path: string;
+  thumbnail_url: string;
+  width: number;
+  height: number;
+  timestamp: number;
+  ai_response?: string;
+  thought?: string;
+}
+
 export interface ChatMessage {
   id: string;
-  type: 'transcript' | 'intent_trigger' | 'assistant' | 'user';
+  type: 'transcript' | 'intent_trigger' | 'assistant' | 'user' | 'screenshot';
   timestamp: number;
-  content: string;
+  content?: string;
   speaker?: 'me' | 'caller';
   segmentId?: string;
   thought?: string;
@@ -29,6 +59,7 @@ export interface ChatMessage {
   lookback_sec?: number;
   excerpt?: string;
   highlight_segment_ids?: string[];
+  screenshot?: ScreenshotData;
 }
 
 export interface HighlightData {

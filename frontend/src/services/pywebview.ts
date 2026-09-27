@@ -1,4 +1,14 @@
-import { Settings, AudioDevicesResponse, RecordingState, Session, TranscriptSegment, ChatMessage } from '../types';
+import { 
+  Settings, 
+  AudioDevicesResponse, 
+  RecordingState, 
+  Session, 
+  TranscriptSegment, 
+  ChatMessage,
+  CaptureTargetsResponse,
+  CaptureTarget,
+  ScreenshotData,
+} from '../types';
 
 declare global {
   interface Window {
@@ -23,14 +33,20 @@ declare global {
         resize_window: (expand: boolean) => Promise<{ status: string; expanded: boolean; width: number }>;
         ask_ai_about_highlight: (sessionId: string, highlightId: string, text: string) => Promise<{ status: string }>;
         save_highlight: (sessionId: string, highlight: any) => Promise<{ status: string; highlights: any[] }>;
+        delete_highlight: (sessionId: string, highlightId: string) => Promise<{ status: string; highlights: any[] }>;
         get_highlights: (sessionId: string) => Promise<any[]>;
         copy_to_clipboard: (text: string) => Promise<{ status: string; text: string }>;
+        get_capture_targets: () => Promise<CaptureTargetsResponse>;
+        set_selected_target: (target: any) => Promise<any>;
+        capture_selected_target: (target?: any) => Promise<ScreenshotData | null>;
+        copy_image_to_clipboard: (imagePath: string) => Promise<{ status: string; success: boolean }>;
+        explain_image_with_ai: (sessionId: string, imageId: string, imagePath: string, prompt?: string, targetTitle?: string) => Promise<any>;
         send_user_message: (text: string) => Promise<any>;
         execute_action_card: (actionId: string, toolName: string, params: any) => Promise<any>;
         get_sessions: () => Promise<Session[]>;
         create_session: (title: string) => Promise<Session>;
         get_session: (id: string) => Promise<any>;
-        save_session: (id: string, title: string, notes: string, messages: any[]) => Promise<boolean>;
+        save_session: (id: string, title: string, notes: string, messages: any[], highlights?: any[]) => Promise<boolean>;
         delete_session: (id: string) => Promise<boolean>;
         toggle_always_on_top: () => Promise<boolean>;
         minimize_window: () => Promise<void>;
@@ -42,6 +58,9 @@ declare global {
     onRecordingStateChanged?: (state: RecordingState) => void;
     onTriggerHighlight?: (data: { words: number }) => void;
     onHighlightAiResponse?: (data: { session_id: string; highlight_id: string; ai_response: string; thought?: string; action_cards?: any[]; error?: string }) => void;
+    onNewScreenshot?: (data: ScreenshotData) => void;
+    onVisionAiResponse?: (data: { session_id: string; image_id: string; image_path: string; target_title?: string; ai_response: string; thought?: string; error?: string }) => void;
+    onScreenshotError?: (data: { message: string }) => void;
   }
 }
 
@@ -50,6 +69,9 @@ type HotkeyListener = (data: any) => void;
 type StateListener = (state: RecordingState) => void;
 type TriggerHighlightListener = (data: { words: number }) => void;
 type HighlightAiListener = (data: { session_id: string; highlight_id: string; ai_response: string; thought?: string; action_cards?: any[]; error?: string }) => void;
+type ScreenshotListener = (data: ScreenshotData) => void;
+type VisionAiListener = (data: { session_id: string; image_id: string; image_path: string; target_title?: string; ai_response: string; thought?: string; error?: string }) => void;
+type ScreenshotErrorListener = (data: { message: string }) => void;
 
 class PyWebViewService {
   private transcriptListeners: Set<TranscriptListener> = new Set();
@@ -57,6 +79,9 @@ class PyWebViewService {
   private stateListeners: Set<StateListener> = new Set();
   private triggerHighlightListeners: Set<TriggerHighlightListener> = new Set();
   private highlightAiListeners: Set<HighlightAiListener> = new Set();
+  private screenshotListeners: Set<ScreenshotListener> = new Set();
+  private visionAiListeners: Set<VisionAiListener> = new Set();
+  private screenshotErrorListeners: Set<ScreenshotErrorListener> = new Set();
   private readyPromise: Promise<boolean> | null = null;
 
   constructor() {
@@ -83,6 +108,18 @@ class PyWebViewService {
     window.onHighlightAiResponse = (data: any) => {
       this.highlightAiListeners.forEach((cb) => cb(data));
     };
+
+    window.onNewScreenshot = (data: ScreenshotData) => {
+      this.screenshotListeners.forEach((cb) => cb(data));
+    };
+
+    window.onVisionAiResponse = (data: any) => {
+      this.visionAiListeners.forEach((cb) => cb(data));
+    };
+
+    window.onScreenshotError = (data: { message: string }) => {
+      this.screenshotErrorListeners.forEach((cb) => cb(data));
+    };
   }
 
   public onTranscript(cb: TranscriptListener): () => void {
@@ -108,6 +145,21 @@ class PyWebViewService {
   public onHighlightAiResponse(cb: HighlightAiListener): () => void {
     this.highlightAiListeners.add(cb);
     return () => this.highlightAiListeners.delete(cb);
+  }
+
+  public onScreenshot(cb: ScreenshotListener): () => void {
+    this.screenshotListeners.add(cb);
+    return () => this.screenshotListeners.delete(cb);
+  }
+
+  public onVisionAi(cb: VisionAiListener): () => void {
+    this.visionAiListeners.add(cb);
+    return () => this.visionAiListeners.delete(cb);
+  }
+
+  public onScreenshotError(cb: ScreenshotErrorListener): () => void {
+    this.screenshotErrorListeners.add(cb);
+    return () => this.screenshotErrorListeners.delete(cb);
   }
 
   private async waitForBridge(timeoutMs = 3000): Promise<boolean> {
@@ -237,6 +289,11 @@ class PyWebViewService {
     return await this.callBridge('save_highlight', [sessionId, highlight]);
   }
 
+  public async deleteHighlight(sessionId: string, highlightId: string): Promise<any[]> {
+    const res = await this.callBridge('delete_highlight', [sessionId, highlightId]);
+    return res?.highlights || [];
+  }
+
   public async getHighlights(sessionId: string): Promise<any[]> {
     const res = await this.callBridge('get_highlights', [sessionId]);
     return res || [];
@@ -247,6 +304,33 @@ class PyWebViewService {
     try {
       await navigator.clipboard.writeText(text);
     } catch {}
+  }
+
+  public async getCaptureTargets(): Promise<CaptureTargetsResponse> {
+    const res = await this.callBridge('get_capture_targets');
+    return res || { screens: [], applications: [] };
+  }
+
+  public async setSelectedTarget(target: any): Promise<any> {
+    return await this.callBridge('set_selected_target', [target]);
+  }
+
+  public async captureSelectedTarget(target?: any): Promise<ScreenshotData | null> {
+    return await this.callBridge('capture_selected_target', target ? [target] : []);
+  }
+
+  public async copyImageToClipboard(imagePath: string): Promise<{ status: string; success: boolean }> {
+    const res = await this.callBridge('copy_image_to_clipboard', [imagePath]);
+    return res || { status: 'failed', success: false };
+  }
+
+  public async explainImageWithAi(sessionId: string, imageId: string, imagePath: string, prompt?: string, targetTitle?: string): Promise<any> {
+    return await this.callBridge('explain_image_with_ai', [sessionId, imageId, imagePath, prompt || '', targetTitle || '']);
+  }
+
+  public async deleteScreenshot(imageId: string, imagePath: string): Promise<{ status: string; deleted: boolean }> {
+    const res = await this.callBridge('delete_screenshot', [imageId, imagePath]);
+    return res || { status: 'failed', deleted: false };
   }
 
   public async sendUserMessage(text: string): Promise<any> {
@@ -292,8 +376,8 @@ class PyWebViewService {
     return res;
   }
 
-  public async saveSession(id: string, title: string, notes: string, messages: any[]): Promise<boolean> {
-    const res = await this.callBridge('save_session', [id, title, notes, messages]);
+  public async saveSession(id: string, title: string, notes: string, messages: any[], highlights?: any[]): Promise<boolean> {
+    const res = await this.callBridge('save_session', [id, title, notes, messages, highlights || []]);
     return res ?? true;
   }
 
