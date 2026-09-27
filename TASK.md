@@ -218,3 +218,36 @@
 
 
 
+
+## Phase 9: STT Speed & Accuracy, Granola 3-Dots Animation & Resizable Sidepanel
+### Subtask 9.1: Agent Roles & Architecture Guardrails Setup
+- [x] Create Senior AI Engineer role specification (`.agents/roles/senior-ai-engineer.md`)
+- [x] Create Senior Backend Developer role specification (`.agents/roles/senior-backend-developer.md`)
+- [x] Create Senior Frontend Developer role specification (`.agents/roles/senior-frontend-developer.md`)
+- [x] Define comprehensive multi-layer architectural guardrails for STT, IPC, Webview2, and LLM (`.agents/rules/stt-and-ui-guardrails.md`)
+
+### Subtask 9.2: Speech-to-Text Performance & Accuracy Overhaul
+- [x] Upgrade audio resampling pipeline in `capture.py` to anti-aliased linear interpolation (eliminates high-frequency distortion)
+- [x] Enhance Voice Activity Detection (VAD) with speech padding (~250ms onset/offset) to prevent clipping words
+- [x] Upgrade STT engine: add configurable Whisper models (`small.en` optimal default, `base.en`, `whisper-large-v3-turbo`) with INT8 quantization
+- [x] Implement transformer prompt conditioning (`initial_prompt`) with rolling context to drastically improve accent recognition and fast speaker tracking
+- [x] Add model selection setting in SettingsModal
+
+### Subtask 9.3: Granola-Style Animated 3-Dots Listening Indicator
+- [x] Implement backend speech activity state tracking and event emission (`onSpeechActivity`) in `capture.py` & `bridge.py`
+- [x] Register `onSpeechActivity` in `pywebview.ts` IPC layer
+- [x] Build animated pulsing 3-dots indicator bubble in `ChatFeed.tsx` for active speaker
+- [x] Smoothly transition the pending 3-dots indicator to transcribed text upon arrival, looping while audio is detected until silence or STOP
+
+### Subtask 9.4: Resizable Right Sidepanel with Drag Handle & Default Reset
+- [x] Build draggable left-edge splitter/handle on `ThreadSidepanel.tsx` with `col-resize` cursor and visual hover indicator
+- [x] Implement pointer event listeners (`pointerdown`, `pointermove`, `pointerup`) with width clamping (min 360px, max 800px)
+- [x] Expand desktop window smoothly via bridge (`resize_window` with custom width) when sidepanel is dragged wider
+- [x] Ensure collapse (`X`) and back (`ArrowLeft`) buttons retain full functionality
+- [x] Enforce automatic reset to default width (420px) whenever sidepanel is opened from a highlight click or screenshot click
+
+### Subtask 9.5: Automated Testing, Manual Walkthrough & User Review
+- [x] Run automated test suite (`pytest tests/`) - 17 passed
+- [x] Build and verify frontend (`npm run build`)
+- [x] Prepare detailed manual walkthrough testing guide (`walkthrough.md`)
+- [ ] Present changes for user review and approval before git staging and merging

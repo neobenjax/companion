@@ -39,10 +39,13 @@ class CompanionBridge:
         self._buffer = RollingTranscriptBuffer(max_retention_sec=900.0)
         self._transcriber = TranscriberWorker(
             buffer=self._buffer,
-            model_size=self._config.get("whisper_model", "base.en"),
+            model_size=self._config.get("whisper_model", "small.en"),
             on_segment=self._on_transcribed_segment,
         )
-        self._capture = AudioCaptureManager(transcriber=self._transcriber)
+        self._capture = AudioCaptureManager(
+            transcriber=self._transcriber,
+            on_speech_activity=self._on_speech_activity,
+        )
 
         # Vision
         self._vision = VisionCaptureManager()
@@ -82,6 +85,9 @@ class CompanionBridge:
     def _on_transcribed_segment(self, segment: TranscriptSegment):
         self._emit_to_ui("onNewTranscript", segment.model_dump())
 
+    def _on_speech_activity(self, activity_data: Dict[str, Any]):
+        self._emit_to_ui("onSpeechActivity", activity_data)
+
     def _on_audio_hotkey_fired(self):
         print("[Bridge] Global audio shortcut fired -> Triggering in-place highlight")
         words = int(self._config.get("lookback_words", 50))
@@ -99,6 +105,7 @@ class CompanionBridge:
     def save_settings(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
         old_audio_hotkey = self._config.get("audio_intent_hotkey")
         old_vision_hotkey = self._config.get("vision_intent_hotkey")
+        old_whisper_model = self._config.get("whisper_model")
         self._config = save_config(settings_data)
 
         # Update hotkeys if changed
@@ -107,6 +114,11 @@ class CompanionBridge:
         if old_audio_hotkey != new_audio_hotkey or old_vision_hotkey != new_vision_hotkey:
             self._hotkeys.unregister_all()
             self._init_hotkeys()
+
+        # Update whisper model if changed
+        new_whisper_model = self._config.get("whisper_model")
+        if old_whisper_model != new_whisper_model and hasattr(self._transcriber, "set_model_size"):
+            self._transcriber.set_model_size(new_whisper_model)
 
         # Update API key if changed
         api_key = self._config.get("gemini_api_key", "")
@@ -162,9 +174,11 @@ class CompanionBridge:
     def trigger_audio_intent(self) -> Dict[str, Any]:
         return self.trigger_highlight()
 
-    def resize_window(self, expand: Any = True) -> Dict[str, Any]:
+    def resize_window(self, expand: Any = True, width: Any = None) -> Dict[str, Any]:
         if isinstance(expand, dict):
-            expand = expand.get("expand", True)
+            d = expand
+            expand = d.get("expand", True)
+            width = d.get("width", None)
         expand = bool(expand)
 
         if not self._window:
@@ -176,7 +190,13 @@ class CompanionBridge:
             curr_x = self._window.x
             curr_y = self._window.y
 
-            target_w = 960 if expand else 560
+            if not expand:
+                target_w = 560
+            elif width is not None and int(width) > 0:
+                target_w = int(width)
+            else:
+                target_w = 960
+
             delta = target_w - curr_w
 
             if delta != 0:

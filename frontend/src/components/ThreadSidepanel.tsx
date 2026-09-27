@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   ArrowLeft, 
@@ -26,6 +26,9 @@ interface ThreadSidepanelProps {
   activeScreenshot?: ScreenshotData | null;
   isLoadingAi: boolean;
   sessionTitle?: string;
+  width?: number;
+  onResize?: (newWidth: number) => void;
+  onResizeEnd?: (newWidth: number) => void;
   onSelectHighlight: (highlight: HighlightData) => void;
   onBackToHighlights: () => void;
   onClose: () => void;
@@ -41,6 +44,9 @@ export const ThreadSidepanel: React.FC<ThreadSidepanelProps> = ({
   activeScreenshot,
   isLoadingAi,
   sessionTitle,
+  width = 420,
+  onResize,
+  onResizeEnd,
   onSelectHighlight,
   onBackToHighlights,
   onClose,
@@ -52,6 +58,41 @@ export const ThreadSidepanel: React.FC<ThreadSidepanelProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showThought, setShowThought] = useState<boolean>(true);
   const [followupPrompt, setFollowupPrompt] = useState<string>('');
+
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(width);
+  const currentWidthRef = useRef(width);
+
+  useEffect(() => {
+    currentWidthRef.current = width;
+  }, [width]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isDraggingRef.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = currentWidthRef.current;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    const delta = startXRef.current - e.clientX;
+    const nextWidth = Math.max(360, Math.min(800, startWidthRef.current + delta));
+    currentWidthRef.current = nextWidth;
+    onResize?.(nextWidth);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    onResizeEnd?.(currentWidthRef.current);
+  };
 
   const activeHighlight = highlights.find((h) => h.id === activeHighlightId);
   const savedHighlights = highlights.filter((h) => h.is_saved || h.ai_response);
@@ -83,7 +124,22 @@ export const ThreadSidepanel: React.FC<ThreadSidepanelProps> = ({
   const isThreadActive = Boolean(activeHighlight || activeScreenshot);
 
   return (
-    <div className="w-[420px] h-full flex flex-col bg-[#0f0f12] border-l border-zinc-800 shrink-0 select-none">
+    <div
+      style={{ width: `${width}px` }}
+      className="relative h-full flex flex-col bg-[#0f0f12] border-l border-zinc-800 shrink-0 select-none"
+    >
+      {/* Draggable Left Edge Splitter */}
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="absolute top-0 bottom-0 -left-1.5 w-3 cursor-col-resize z-50 group flex items-center justify-center hover:bg-purple-500/20 active:bg-purple-500/30 transition-colors"
+        title="Drag left edge to resize panel (360px - 800px)"
+      >
+        <div className="w-1 h-8 rounded-full bg-zinc-700/60 group-hover:bg-purple-400 group-hover:scale-y-125 transition-all" />
+      </div>
+
       {/* Top Header */}
       <div className="h-12 border-b border-zinc-800/80 px-4 flex items-center justify-between bg-[#141418]">
         {isThreadActive ? (

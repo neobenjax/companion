@@ -21,6 +21,12 @@ class TranscriberWorker:
         self._worker_thread = None
         self._model_loading = False
 
+    def set_model_size(self, new_model_size: str):
+        if self.model_size != new_model_size:
+            print(f"[Transcriber] Switching Whisper model from '{self.model_size}' to '{new_model_size}'...", flush=True)
+            self.model_size = new_model_size
+            self._model = None
+
     def _ensure_model(self):
         if self._model is None and not self._model_loading:
             self._model_loading = True
@@ -29,10 +35,16 @@ class TranscriberWorker:
                 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
                 from faster_whisper import WhisperModel
 
+                resolved_model = self.model_size
+                if resolved_model == "whisper-large-v3-turbo":
+                    resolved_model = "deepdml/faster-whisper-large-v3-turbo-ct2"
+
+                print(f"[Transcriber] Initializing Whisper model '{resolved_model}'...", flush=True)
+
                 # Attempt auto/GPU first, fallback to CPU (int8) if CUDA libraries (e.g. cublas64_12.dll) are missing
                 try:
                     m = WhisperModel(
-                        self.model_size,
+                        resolved_model,
                         device="auto",
                         compute_type="int8",
                         cpu_threads=4,
@@ -41,16 +53,16 @@ class TranscriberWorker:
                     dummy_audio = np.zeros(1600, dtype=np.float32)
                     list(m.transcribe(dummy_audio, language="en")[0])
                     self._model = m
-                    print(f"[Transcriber] Whisper model loaded successfully with GPU acceleration.")
+                    print(f"[Transcriber] Whisper model '{resolved_model}' loaded successfully with GPU acceleration.", flush=True)
                 except Exception as cuda_err:
-                    print(f"[Transcriber] GPU acceleration unavailable ({cuda_err}). Loading CPU engine (INT8)...")
+                    print(f"[Transcriber] GPU acceleration unavailable ({cuda_err}). Loading CPU engine (INT8)...", flush=True)
                     self._model = WhisperModel(
-                        self.model_size,
+                        resolved_model,
                         device="cpu",
                         compute_type="int8",
                         cpu_threads=4,
                     )
-                    print("[Transcriber] Whisper model loaded successfully on CPU.")
+                    print(f"[Transcriber] Whisper model '{resolved_model}' loaded successfully on CPU.", flush=True)
             except Exception as e:
                 print(f"[Transcriber] Failed to load faster-whisper model: {e}")
                 self._model = None
@@ -92,11 +104,20 @@ class TranscriberWorker:
                     continue
 
             try:
-                # Transcribe chunk
+                # Prompt conditioning: extract recent transcript words to condition language model on speaker accent & vocabulary
+                recent_info = self.buffer.get_recent_text(duration_sec=30.0)
+                raw_text = recent_info.get("text", "")
+                # Strip bracketed speaker tags e.g. [ME]: or [CALLER]:
+                clean_words = [w for w in raw_text.split() if not (w.startswith("[") and w.endswith("]:"))]
+                initial_prompt = " ".join(clean_words[-25:]) if clean_words else None
+
+                # Transcribe chunk with 2026 optimized inference parameters
                 segments, info = self._model.transcribe(
                     audio,
                     beam_size=1,
                     language="en",
+                    initial_prompt=initial_prompt,
+                    condition_on_previous_text=False,  # Prevents repetitive hallucination loops
                     vad_filter=False,  # We already filtered via VAD in capture
                 )
                 for s in segments:

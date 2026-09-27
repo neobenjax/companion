@@ -33,6 +33,12 @@ export const App: React.FC = () => {
   const [isSidepanelOpen, setIsSidepanelOpen] = useState(false);
   const [activeThreadHighlightId, setActiveThreadHighlightId] = useState<string | null>(null);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const DEFAULT_SIDEPANEL_WIDTH = 420;
+  const [sidepanelWidth, setSidepanelWidth] = useState<number>(DEFAULT_SIDEPANEL_WIDTH);
+  const [speechActivity, setSpeechActivity] = useState<{ is_speaking: boolean; speaker: string }>({
+    is_speaking: false,
+    speaker: 'me',
+  });
 
   const [recordingState, setRecordingState] = useState<RecordingState>({
     is_recording: false,
@@ -43,7 +49,7 @@ export const App: React.FC = () => {
     vision_intent_hotkey: '<ctrl>+<shift>+v',
     lookback_duration_sec: 10,
     lookback_words: 50,
-    whisper_model: 'base.en',
+    whisper_model: 'small.en',
     input_device_index: null,
     loopback_device_index: null,
     gemini_api_key: '',
@@ -189,6 +195,13 @@ export const App: React.FC = () => {
 
     const unsubState = pywebviewService.onRecordingState((state: RecordingState) => {
       setRecordingState(state);
+      if (!state.is_recording) {
+        setSpeechActivity({ is_speaking: false, speaker: 'me' });
+      }
+    });
+
+    const unsubSpeechActivity = pywebviewService.onSpeechActivity((activity) => {
+      setSpeechActivity(activity);
     });
 
     // Event listener: New screenshot captured
@@ -263,6 +276,7 @@ export const App: React.FC = () => {
 
     return () => {
       unsubTranscript();
+      unsubSpeechActivity();
       unsubTriggerHighlight();
       unsubHighlightAi();
       unsubState();
@@ -439,11 +453,15 @@ export const App: React.FC = () => {
   };
 
   // Toggle or open sidepanel and resize window dynamically
-  const handleToggleSidepanel = async (forcedOpen?: boolean) => {
+  const handleToggleSidepanel = async (forcedOpen?: boolean, resetToDefault = false) => {
     const shouldOpen = forcedOpen !== undefined ? forcedOpen : !isSidepanelOpen;
     setIsSidepanelOpen(shouldOpen);
+    if (resetToDefault || !shouldOpen) {
+      setSidepanelWidth(DEFAULT_SIDEPANEL_WIDTH);
+    }
+    const currentW = resetToDefault ? DEFAULT_SIDEPANEL_WIDTH : sidepanelWidth;
     try {
-      await pywebviewService.resizeWindow(shouldOpen);
+      await pywebviewService.resizeWindow(shouldOpen, shouldOpen ? 540 + currentW : 560);
     } catch (e) {
       console.error('Failed to resize window:', e);
     }
@@ -478,17 +496,18 @@ export const App: React.FC = () => {
     setActiveHighlightForModal(newHighlight);
   };
 
-  // Click on a highlighted text in chat - always prompt with floating actions modal
+  // Click on a highlighted text in chat - ALWAYS prompt with floating actions modal
   const handleHighlightClick = (hl: HighlightData) => {
     setActiveHighlightForModal(hl);
   };
 
-  // Floating Actions: 1. Ask AI about...
+  // Floating Actions: 1. Ask AI about... (opens sidepanel at default width)
   const handleModalAskAi = async (hl: HighlightData) => {
     setActiveHighlightForModal(null);
     setActiveThreadHighlightId(hl.id);
+    setActiveThreadScreenshot(null);
     setIsLoadingAi(true);
-    await handleToggleSidepanel(true);
+    await handleToggleSidepanel(true, true);
 
     if (activeSession) {
       await pywebviewService.askAiAboutHighlight(activeSession.id, hl.id, hl.text);
@@ -534,6 +553,7 @@ export const App: React.FC = () => {
     }
   };
 
+  // Click on a screenshot thumbnail in chat - ALWAYS prompt with floating actions modal
   const handleScreenshotClick = (shot: ScreenshotData) => {
     setActiveScreenshotForModal(shot);
   };
@@ -543,7 +563,7 @@ export const App: React.FC = () => {
     setActiveThreadScreenshot(shot);
     setActiveThreadHighlightId(null);
     setIsLoadingAi(true);
-    await handleToggleSidepanel(true);
+    await handleToggleSidepanel(true, true);
 
     if (activeSession) {
       await pywebviewService.explainImageWithAi(
@@ -703,6 +723,7 @@ export const App: React.FC = () => {
             onScreenshotClick={handleScreenshotClick}
             onUpdateCard={handleUpdateCard}
             isRecording={recordingState.is_recording}
+            speechActivity={speechActivity}
           />
 
           {/* Floating Actions Modal (Screenshot) */}
@@ -714,7 +735,7 @@ export const App: React.FC = () => {
                 setActiveScreenshotForModal(null);
                 setActiveThreadScreenshot(item as ScreenshotData);
                 setActiveThreadHighlightId(null);
-                handleToggleSidepanel(true);
+                handleToggleSidepanel(true, true);
               }}
               onCopy={(item) => handleScreenshotCopy(item as ScreenshotData)}
               onDeleteScreenshot={handleScreenshotDelete}
@@ -731,7 +752,7 @@ export const App: React.FC = () => {
                 setActiveHighlightForModal(null);
                 setActiveThreadHighlightId((item as HighlightData).id);
                 setActiveThreadScreenshot(null);
-                handleToggleSidepanel(true);
+                handleToggleSidepanel(true, true);
               }}
               onCopy={(item) => handleModalCopy(item as HighlightData)}
               onSaveForLater={handleModalSaveForLater}
@@ -776,6 +797,12 @@ export const App: React.FC = () => {
             activeScreenshot={activeThreadScreenshot}
             isLoadingAi={isLoadingAi}
             sessionTitle={activeSession?.title || 'New note'}
+            width={sidepanelWidth}
+            onResize={(w) => setSidepanelWidth(w)}
+            onResizeEnd={(w) => {
+              setSidepanelWidth(w);
+              pywebviewService.resizeWindow(true, 540 + w);
+            }}
             onSelectHighlight={(hl) => {
               setActiveThreadScreenshot(null);
               setActiveThreadHighlightId(hl.id);

@@ -30,7 +30,7 @@ declare global {
         get_recording_state: () => Promise<RecordingState>;
         trigger_audio_intent: () => Promise<{ status: string }>;
         trigger_highlight: () => Promise<{ status: string; words: number }>;
-        resize_window: (expand: boolean) => Promise<{ status: string; expanded: boolean; width: number }>;
+        resize_window: (expand: boolean, width?: number) => Promise<{ status: string; expanded: boolean; width: number }>;
         ask_ai_about_highlight: (sessionId: string, highlightId: string, text: string) => Promise<{ status: string }>;
         save_highlight: (sessionId: string, highlight: any) => Promise<{ status: string; highlights: any[] }>;
         delete_highlight: (sessionId: string, highlightId: string) => Promise<{ status: string; highlights: any[] }>;
@@ -54,6 +54,7 @@ declare global {
       };
     };
     onNewTranscript?: (segment: TranscriptSegment) => void;
+    onSpeechActivity?: (data: { is_speaking: boolean; speaker: string }) => void;
     onHotkeyTriggered?: (data: any) => void;
     onRecordingStateChanged?: (state: RecordingState) => void;
     onTriggerHighlight?: (data: { words: number }) => void;
@@ -65,6 +66,7 @@ declare global {
 }
 
 type TranscriptListener = (segment: TranscriptSegment) => void;
+type SpeechActivityListener = (data: { is_speaking: boolean; speaker: string }) => void;
 type HotkeyListener = (data: any) => void;
 type StateListener = (state: RecordingState) => void;
 type TriggerHighlightListener = (data: { words: number }) => void;
@@ -82,6 +84,7 @@ class PyWebViewService {
   private screenshotListeners: Set<ScreenshotListener> = new Set();
   private visionAiListeners: Set<VisionAiListener> = new Set();
   private screenshotErrorListeners: Set<ScreenshotErrorListener> = new Set();
+  private speechActivityListeners: Set<SpeechActivityListener> = new Set();
   private readyPromise: Promise<boolean> | null = null;
 
   constructor() {
@@ -91,6 +94,10 @@ class PyWebViewService {
   private initEventListeners() {
     window.onNewTranscript = (segment: TranscriptSegment) => {
       this.transcriptListeners.forEach((cb) => cb(segment));
+    };
+
+    window.onSpeechActivity = (data: { is_speaking: boolean; speaker: string }) => {
+      this.speechActivityListeners.forEach((cb) => cb(data));
     };
 
     window.onHotkeyTriggered = (data: any) => {
@@ -125,6 +132,11 @@ class PyWebViewService {
   public onTranscript(cb: TranscriptListener): () => void {
     this.transcriptListeners.add(cb);
     return () => this.transcriptListeners.delete(cb);
+  }
+
+  public onSpeechActivity(cb: SpeechActivityListener): () => void {
+    this.speechActivityListeners.add(cb);
+    return () => this.speechActivityListeners.delete(cb);
   }
 
   public onHotkey(cb: HotkeyListener): () => void {
@@ -276,9 +288,9 @@ class PyWebViewService {
     await this.callBridge('trigger_highlight');
   }
 
-  public async resizeWindow(expand: boolean): Promise<{ status: string; expanded: boolean; width: number }> {
-    const res = await this.callBridge('resize_window', [expand]);
-    return res || { status: 'ok', expanded: expand, width: expand ? 860 : 460 };
+  public async resizeWindow(expand: boolean, width?: number): Promise<{ status: string; expanded: boolean; width: number }> {
+    const res = await this.callBridge('resize_window', [expand, width]);
+    return res || { status: 'ok', expanded: expand, width: width || (expand ? 960 : 560) };
   }
 
   public async askAiAboutHighlight(sessionId: string, highlightId: string, text: string): Promise<any> {
