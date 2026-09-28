@@ -1,16 +1,22 @@
 import json
+import os
+import sys
 import threading
 import time
 from typing import Dict, Any, Optional, List
 import webview
 
 from backend.config import load_config, save_config
-from backend.storage.session_db import SessionStorage
+from backend.storage.session_db import SessionStorage, _SENTINEL
 from backend.audio.buffer import RollingTranscriptBuffer, TranscriptSegment
 from backend.audio.transcriber import TranscriberWorker
 from backend.audio.capture import AudioCaptureManager
 from backend.hotkeys.manager import GlobalHotkeyManager
-from backend.agent.orchestrator import AgentOrchestrator
+from backend.agent.orchestrator import (
+    AgentOrchestrator,
+    DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION,
+    DEFAULT_VISION_SYSTEM_INSTRUCTION,
+)
 from backend.agent.tools import execute_tool
 from backend.vision.capture import VisionCaptureManager
 
@@ -59,8 +65,11 @@ class CompanionBridge:
         self._active_session_id: Optional[str] = None
         self._init_hotkeys()
 
-    def set_window(self, window: webview.Window):
+    def _set_window(self, window: webview.Window):
         self._window = window
+
+    def set_window(self, window: webview.Window):
+        self._set_window(window)
 
     def _init_hotkeys(self):
         audio_hotkey = self._config.get("audio_intent_hotkey", "<ctrl>+<shift>+a")
@@ -211,12 +220,27 @@ class CompanionBridge:
             print(f"[Bridge] Error resizing window: {e}")
             return {"status": "error", "message": str(e)}
 
-    def ask_ai_about_highlight(self, session_id: Any = None, highlight_id: str = "", text: str = "") -> Dict[str, Any]:
+    def ask_ai_about_highlight(
+        self,
+        session_id: Any = None,
+        highlight_id: str = "",
+        text: str = "",
+        custom_instruction: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if isinstance(session_id, dict):
             d = session_id
             session_id = d.get("session_id", "")
             highlight_id = d.get("highlight_id", "")
             text = d.get("text", "")
+            custom_instruction = d.get("custom_instruction", None)
+
+        sid = _normalize_id(session_id)
+        # Resolve prompt instruction: explicitly passed > session db record > None (agent falls back to default)
+        instruction_to_use = custom_instruction
+        if instruction_to_use is None and sid:
+            sess_rec = self._storage.get_session(sid)
+            if sess_rec:
+                instruction_to_use = sess_rec.get("prompt_highlight")
 
         def _worker():
             try:
@@ -226,6 +250,7 @@ class CompanionBridge:
                     text_excerpt=prompt,
                     is_hotkey=True,
                     segment_ids=[],
+                    custom_system_instruction=instruction_to_use,
                 )
                 highlight_update = {
                     "id": highlight_id,
@@ -233,11 +258,11 @@ class CompanionBridge:
                     "thought": result.get("thought", ""),
                     "action_cards": result.get("action_cards", []),
                 }
-                if session_id:
-                    self._storage.add_or_update_highlight(session_id, highlight_update)
+                if sid:
+                    self._storage.add_or_update_highlight(sid, highlight_update)
 
                 self._emit_to_ui("onHighlightAiResponse", {
-                    "session_id": session_id,
+                    "session_id": sid,
                     "highlight_id": highlight_id,
                     "ai_response": result["content"],
                     "thought": result.get("thought", ""),
@@ -246,7 +271,7 @@ class CompanionBridge:
             except Exception as e:
                 print(f"[Bridge] Error in ask_ai_about_highlight: {e}", flush=True)
                 self._emit_to_ui("onHighlightAiResponse", {
-                    "session_id": session_id,
+                    "session_id": sid,
                     "highlight_id": highlight_id,
                     "error": str(e),
                     "ai_response": f"Error contacting AI: {e}",
@@ -329,7 +354,15 @@ class CompanionBridge:
         success = self._vision.copy_image_to_clipboard(str(image_path))
         return {"status": "copied" if success else "failed", "success": success}
 
-    def explain_image_with_ai(self, session_id: Any = None, image_id: str = "", image_path: str = "", prompt: str = "", target_title: str = "") -> Dict[str, Any]:
+    def explain_image_with_ai(
+        self,
+        session_id: Any = None,
+        image_id: str = "",
+        image_path: str = "",
+        prompt: str = "",
+        target_title: str = "",
+        custom_instruction: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if isinstance(session_id, dict):
             d = session_id
             session_id = d.get("session_id", "")
@@ -337,6 +370,14 @@ class CompanionBridge:
             image_path = d.get("image_path", "")
             prompt = d.get("prompt", "")
             target_title = d.get("target_title", "")
+            custom_instruction = d.get("custom_instruction", None)
+
+        sid = _normalize_id(session_id)
+        instruction_to_use = custom_instruction
+        if instruction_to_use is None and sid:
+            sess_rec = self._storage.get_session(sid)
+            if sess_rec:
+                instruction_to_use = sess_rec.get("prompt_image")
 
         def _worker():
             try:
@@ -345,9 +386,10 @@ class CompanionBridge:
                     image_path=image_path,
                     prompt=prompt,
                     target_title=target_title,
+                    custom_system_instruction=instruction_to_use,
                 )
                 self._emit_to_ui("onVisionAiResponse", {
-                    "session_id": session_id,
+                    "session_id": sid,
                     "image_id": image_id,
                     "image_path": image_path,
                     "target_title": target_title,
@@ -358,7 +400,7 @@ class CompanionBridge:
             except Exception as e:
                 print(f"[Bridge] Error in explain_image_with_ai: {e}", flush=True)
                 self._emit_to_ui("onVisionAiResponse", {
-                    "session_id": session_id,
+                    "session_id": sid,
                     "image_id": image_id,
                     "image_path": image_path,
                     "target_title": target_title,
@@ -441,6 +483,8 @@ class CompanionBridge:
         notes: str = "",
         messages: Any = None,
         highlights: Any = None,
+        prompt_highlight: Any = _SENTINEL,
+        prompt_image: Any = _SENTINEL,
     ) -> bool:
         if isinstance(session_id, dict):
             d = session_id
@@ -449,6 +493,10 @@ class CompanionBridge:
             notes = d.get("notes", "")
             messages = d.get("messages", [])
             highlights = d.get("highlights", None)
+            if "prompt_highlight" in d:
+                prompt_highlight = d["prompt_highlight"]
+            if "prompt_image" in d:
+                prompt_image = d["prompt_image"]
 
         sid = _normalize_id(session_id)
         if not sid:
@@ -460,6 +508,8 @@ class CompanionBridge:
             notes=notes if notes is not None else None,
             messages=messages,
             highlights=highlights,
+            prompt_highlight=prompt_highlight,
+            prompt_image=prompt_image,
         )
 
     def delete_session(self, session_id: Any = None) -> bool:
@@ -471,7 +521,70 @@ class CompanionBridge:
             self._buffer.clear()
         return self._storage.delete_session(sid)
 
-    # Window controls
+    def get_default_prompts(self) -> Dict[str, str]:
+        return {
+            "highlight": DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION,
+            "image": DEFAULT_VISION_SYSTEM_INSTRUCTION,
+        }
+
+    # Window controls & Transparency
+    def set_window_opacity(self, opacity: Any = 1.0) -> Dict[str, Any]:
+        if isinstance(opacity, dict):
+            opacity = opacity.get("opacity", 1.0)
+        try:
+            val = float(opacity)
+        except (ValueError, TypeError):
+            val = 1.0
+        # Clamp to 50% (0.5) - 100% (1.0)
+        val = max(0.5, min(1.0, val))
+
+        self._config["window_opacity"] = val
+        save_config(self._config)
+
+        if sys.platform == "win32":
+            try:
+                # 1. Native WinForms non-blocking Form.Opacity
+                if self._window:
+                    try:
+                        import webview.platforms.winforms as wf
+                        form = wf.BrowserView.instances.get(self._window.uid)
+                        if form:
+                            def _apply_opacity():
+                                try:
+                                    form.Opacity = val
+                                except Exception:
+                                    pass
+
+                            if hasattr(form, "InvokeRequired") and form.InvokeRequired:
+                                import System
+                                form.BeginInvoke(System.Action(_apply_opacity))
+                            else:
+                                _apply_opacity()
+                            return {"status": "ok", "opacity": val}
+                    except Exception as wf_err:
+                        pass
+
+                # 2. Win32 fallback via window handle
+                import win32gui
+                import win32con
+
+                hwnd = win32gui.FindWindow(None, "Ambient Copilot")
+                if hwnd:
+                    alpha = int(round(val * 255))
+                    ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+                    if not (ex_style & win32con.WS_EX_LAYERED):
+                        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style | win32con.WS_EX_LAYERED)
+                    win32gui.SetLayeredWindowAttributes(hwnd, 0, alpha, win32con.LWA_ALPHA)
+                    return {"status": "ok", "opacity": val, "hwnd": hwnd}
+            except Exception as e:
+                print(f"[Bridge] Error setting native window opacity: {e}", flush=True)
+                return {"status": "error", "message": str(e), "opacity": val}
+
+        return {"status": "ok", "opacity": val}
+
+    def get_window_opacity(self) -> float:
+        return float(self._config.get("window_opacity", 1.0))
+
     def toggle_always_on_top(self) -> bool:
         if self._window:
             self._window.on_top = not self._window.on_top
@@ -489,3 +602,4 @@ class CompanionBridge:
             self.stop_recording()
             self._hotkeys.unregister_all()
             self._window.destroy()
+

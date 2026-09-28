@@ -250,4 +250,69 @@
 - [x] Run automated test suite (`pytest tests/`) - 17 passed
 - [x] Build and verify frontend (`npm run build`)
 - [x] Prepare detailed manual walkthrough testing guide (`walkthrough.md`)
-- [ ] Present changes for user review and approval before git staging and merging
+- [x] Present changes for user review and approval before git staging and merging
+
+## Phase 10: App Transparency Slider, Independent Font Controls & Per-Session AI Prompts
+### Subtask 10.1: Native Window Transparency Slider (10% - 100%)
+- [x] Implement Win32 `SetLayeredWindowAttributes` bridge method `set_window_opacity(opacity: float)` in `backend/desktop.py` and `backend/bridge.py`
+- [x] Add `set_window_opacity` method to `pywebview.ts` IPC service layer
+- [x] Build compact transparency slider control in `TitleBar.tsx` (10% to 100% range, slider + percentage badge)
+- [x] Add fallback CSS opacity on app root for browser preview mode
+- [x] Persist chosen opacity value in local storage / user configuration
+
+### Subtask 10.2: Independent Font Size Controls for Chat & Sidepanel
+- [x] Design always-on-top font size control UI (`-` / `+` / reset indicator)
+- [x] Embed chat font size controls as a pinned/always-on-top element of `ChatFeed.tsx`
+- [x] Fix chat header layout: isolate session header (Title, pills, persona badge, and font controls) in a dedicated fixed/pinned top bar (`shrink-0 z-20`) so it never scrolls away when scrolling through transcripts
+- [x] Wire `fontSize` prop directly into `<TranscriptItem fontSize={fontSize} />`, user bubbles, and assistant responses in `ChatFeed.tsx`
+- [x] Embed sidepanel font size controls as an always-on-top element of `ThreadSidepanel.tsx`
+- [x] Wire dynamic font scaling across all sidepanel elements (saved highlights list, quote excerpts, reasoning traces, and markdown responses), eliminating conflicting Tailwind classes
+- [x] Persist independent font sizes in `localStorage`
+
+### Subtask 10.3: Per-Conversation AI Prompt Customization (Highlights & Images)
+- [x] Add `prompt_highlight` and `prompt_image` columns to SQLite `sessions` table in `session_db.py` with automatic schema migration
+- [x] Update `backend/bridge.py` (`save_session`, `get_session`, `create_session`) to handle custom prompts
+- [x] Refactor `AgentOrchestrator` (`analyze_intent` and `analyze_vision`) to accept and log custom system instructions with fallback to defaults
+- [x] Pass session-specific custom prompts in `ask_ai_about_highlight` and `explain_image_with_ai`
+- [x] Create `SessionPromptModal.tsx` allowing editing of highlight & screenshot prompts, previewing default prompt templates, and resetting
+- [x] Add entry point button and status indicator in `ThreadSidepanel.tsx` and `ChatFeed.tsx` session header
+
+### Subtask 10.4: Automated Tests, Manual Walkthrough & User Review
+- [x] Write unit tests for session prompt persistence and orchestrator prompt overriding (`test_prompts_and_transparency.py`)
+- [x] Execute automated test suite (`uv run pytest tests/`) - 21 passed
+- [x] Run production build (`npm run build`)
+- [x] Prepare comprehensive manual walkthrough guide with step-by-step instructions
+- [x] Collect user feedback on opacity threshold and font sizing
+
+### Subtask 10.5: Opacity Slider Range Adjustment (50% - 100%)
+- [x] Adjust Win32 bridge minimum opacity clamp from `0.10` to `0.50` in `backend/bridge.py` and `backend/desktop.py`
+- [x] Update frontend slider range in `TitleBar.tsx` (`min="50"`, `max="100"`) and tooltip title
+- [x] Update frontend service and App state clamping to `0.50` in `pywebview.ts` and `App.tsx`
+- [x] Update test assertions in `tests/test_prompts_and_transparency.py`
+- [x] Verify test suite (`uv run pytest tests/` - 21 passed) and build (`npm run build`)
+- [x] Update manual walkthrough testing guide
+
+### Subtask 10.6: Startup Freeze & Last Opened Chat Restoration Fix
+- [x] Enable SQLite WAL mode (`PRAGMA journal_mode=WAL;`), 30s busy timeout, and thread lock in `backend/storage/session_db.py`
+- [x] Optimize `backup_to_json()` with WAL concurrency and thread mutex to eliminate database lock contention
+- [x] Ensure `CompanionBridge._set_window` is internal to prevent pywebview method introspection leaks
+- [x] Prioritize native WinForms `form.Invoke(lambda: setattr(form, 'Opacity', val))` in `bridge.py`
+- [x] Add 300ms delay to initial opacity restore in `desktop.py` to prevent CoreWebView2 controller initialization contention
+- [x] Upgrade `waitForBridge()` in `pywebview.ts` with 40ms active polling and 12s timeout without stale false-cache
+- [x] Implement `companion_active_session_id` persistence and restoration in `App.tsx`
+- [x] Add `isInitializing` startup guard and late `pywebviewready` event listener in `App.tsx`
+- [x] Run test suite (`uv run pytest tests/` - 21 passed) and production build (`npm run build`)
+- [x] Update walkthrough guide with troubleshooting root cause and verification steps
+
+### Subtask 10.7: Resolve Intermittent Startup Freeze & Double-Initialization Deadlock
+- [x] Eliminate double initialization in `App.tsx` by removing redundant `pywebviewready` listener and adding re-entrancy locks (`isInitializingRef`, `isLoadedRef`)
+- [x] Replace blocking synchronous `form.Invoke` with non-blocking `form.BeginInvoke(System.Action(...))` in `backend/bridge.py`
+- [x] Remove background `threading.Timer(0.3)` opacity call in `backend/desktop.py` that collided with WebView2 navigation
+- [x] Add 10-second safety timeout on `callBridge` in `frontend/src/services/pywebview.ts` to prevent UI Promise hangs
+- [x] Sequence startup queries in `loadInitialData` and only apply non-100% opacity after session retrieval completes
+- [x] Run test suite (`uv run pytest tests/` - 21 passed) and production build (`npm run build`)
+- [ ] Update walkthrough guide with root cause analysis and manual verification steps
+- [ ] Await user review and approval before stashing, committing, pushing, and merging to main
+
+
+

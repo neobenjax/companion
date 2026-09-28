@@ -49,7 +49,7 @@ def main():
         background_color="#18181b",  # zinc-900
     )
 
-    bridge.set_window(window)
+    bridge._set_window(window)
 
     def on_shown():
         print("[Copilot] Ambient Copilot HUD window is now visible on screen!", flush=True)

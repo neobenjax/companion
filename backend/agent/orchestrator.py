@@ -4,6 +4,27 @@ import time
 from typing import Dict, Any, List, Optional
 from backend.agent.tools import execute_math, execute_tool
 
+DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION = (
+    "You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity).\n"
+    "Tone & Style:\n"
+    "- Casual, clear, and friendly.\n"
+    "- Explain any technical words or concepts in simple layman's terms so any reader can understand.\n"
+    "Formatting:\n"
+    "- Summarize the key information using clear bullet points.\n"
+    "- Straight to the point without conversational filler, long dashes (like --- or —), or decorators.\n"
+    "- Provide complete, well-formed, and comprehensive explanations."
+)
+
+DEFAULT_VISION_SYSTEM_INSTRUCTION = (
+    "You are an ambient multimodal Windows Copilot companion.\n"
+    "Analyze the provided screenshot with high precision.\n"
+    "RULES:\n"
+    "- Summary First: Begin with 1-2 concise sentences stating the purpose of what the user is doing or needs to know from the image.\n"
+    "- Highlights: Use short bullet points to highlight only the most critical parts (active window, key content, errors, code, or data).\n"
+    "- Tone: Casual and plain English. If technical terms are present, explain what they mean simply in layman's terms.\n"
+    "- Formatting: No decorators, no long dashes (like --- or —). Provide a complete and well-structured breakdown."
+)
+
 
 class AgentOrchestrator:
     def __init__(self, api_key: str = ""):
@@ -46,7 +67,13 @@ class AgentOrchestrator:
                 print(f"[AgentOrchestrator] GenAI fallback failed: {ge}")
                 self._sdk_agent = None
 
-    def analyze_intent(self, text_excerpt: str, is_hotkey: bool = True, segment_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    def analyze_intent(
+        self,
+        text_excerpt: str,
+        is_hotkey: bool = True,
+        segment_ids: Optional[List[str]] = None,
+        custom_system_instruction: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Processes either an audio lookback excerpt or a direct user text prompt.
         Returns:
@@ -103,21 +130,19 @@ class AgentOrchestrator:
         if self._sdk_agent:
             try:
                 thought = "Analyzing speech context via Google Antigravity Agent..."
-                system_instruction = (
-                    "You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity).\n"
-                    "Tone & Style:\n"
-                    "- Casual, clear, and friendly.\n"
-                    "- Explain any technical words or concepts in simple layman's terms so any reader can understand.\n"
-                    "Formatting:\n"
-                    "- Summarize the key information using clear bullet points.\n"
-                    "- Straight to the point without conversational filler, long dashes (like --- or —), or decorators.\n"
-                    "- Provide complete, well-formed, and comprehensive explanations."
-                )
+                custom_clean = (custom_system_instruction or "").strip()
+                if custom_clean:
+                    system_instruction = custom_clean
+                    instruction_mode = "Custom Session Persona"
+                else:
+                    system_instruction = DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION
+                    instruction_mode = "Default Ambient Copilot"
 
                 print("\n" + "=" * 70, flush=True)
                 print(">>> [AI AGENT REQUEST: TEXT INTENT] >>>", flush=True)
                 print(f"  Model: gemini-3.8-flash", flush=True)
                 print(f"  Topic / Query: {text_excerpt}", flush=True)
+                print(f"  Instruction Source: {instruction_mode}", flush=True)
                 print(f"  Parameters: temperature=0.3", flush=True)
                 print(f"  System Instruction:\n    {system_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
                 print("=" * 70, flush=True)
@@ -248,7 +273,13 @@ class AgentOrchestrator:
             "highlight_segment_ids": segment_ids or [],
         }
 
-    def analyze_vision(self, image_path: str, prompt: str = "", target_title: str = "") -> Dict[str, Any]:
+    def analyze_vision(
+        self,
+        image_path: str,
+        prompt: str = "",
+        target_title: str = "",
+        custom_system_instruction: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Analyzes a high-resolution screenshot using Gemini Multimodal Vision API or offline sandbox fallback.
         """
@@ -273,15 +304,13 @@ class AgentOrchestrator:
                 if ai_img.width > max_dim or ai_img.height > max_dim:
                     ai_img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
-                vision_instruction = (
-                    "You are an ambient multimodal Windows Copilot companion.\n"
-                    "Analyze the provided screenshot with high precision.\n"
-                    "RULES:\n"
-                    "- Summary First: Begin with 1-2 concise sentences stating the purpose of what the user is doing or needs to know from the image.\n"
-                    "- Highlights: Use short bullet points to highlight only the most critical parts (active window, key content, errors, code, or data).\n"
-                    "- Tone: Casual and plain English. If technical terms are present, explain what they mean simply in layman's terms.\n"
-                    "- Formatting: No decorators, no long dashes (like --- or —). Provide a complete and well-structured breakdown."
-                )
+                custom_clean = (custom_system_instruction or "").strip()
+                if custom_clean:
+                    vision_instruction = custom_clean
+                    instruction_mode = "Custom Session Persona"
+                else:
+                    vision_instruction = DEFAULT_VISION_SYSTEM_INSTRUCTION
+                    instruction_mode = "Default Ambient Multimodal"
 
                 print("\n" + "=" * 70, flush=True)
                 print(">>> [AI AGENT REQUEST: VISION ANALYSIS] >>>", flush=True)
@@ -289,6 +318,7 @@ class AgentOrchestrator:
                 print(f"  Target: {target_name}", flush=True)
                 print(f"  Image: {image_path} (Optimized Payload: {ai_img.width}x{ai_img.height})", flush=True)
                 print(f"  User Prompt: {prompt if prompt else 'Default analysis'}", flush=True)
+                print(f"  Instruction Source: {instruction_mode}", flush=True)
                 print(f"  Parameters: temperature=0.3", flush=True)
                 print(f"  System Instruction:\n    {vision_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
                 print("=" * 70, flush=True)

@@ -83,6 +83,9 @@ export interface Session {
   notes?: string;
   notes_preview?: string;
   highlights?: HighlightData[];
+  prompt_highlight?: string;
+  prompt_image?: string;
+  has_custom_prompts?: boolean;
 }
 
 export interface Settings {
@@ -95,6 +98,7 @@ export interface Settings {
   loopback_device_index: number | null;
   gemini_api_key: string;
   always_on_top: boolean;
+  window_opacity?: number;
   window_width?: number;
   window_height?: number;
 }

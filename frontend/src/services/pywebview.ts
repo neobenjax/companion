@@ -45,9 +45,11 @@ declare global {
         execute_action_card: (actionId: string, toolName: string, params: any) => Promise<any>;
         get_sessions: () => Promise<Session[]>;
         create_session: (title: string) => Promise<Session>;
-        get_session: (id: string) => Promise<any>;
-        save_session: (id: string, title: string, notes: string, messages: any[], highlights?: any[]) => Promise<boolean>;
+        save_session: (id: string, title: string, notes: string, messages: any[], highlights?: any[], prompt_highlight?: string, prompt_image?: string) => Promise<boolean>;
         delete_session: (id: string) => Promise<boolean>;
+        get_default_prompts: () => Promise<{ highlight: string; image: string }>;
+        set_window_opacity: (opacity: number) => Promise<{ status: string; opacity: number }>;
+        get_window_opacity: () => Promise<number>;
         toggle_always_on_top: () => Promise<boolean>;
         minimize_window: () => Promise<void>;
         close_window: () => Promise<void>;
@@ -85,7 +87,6 @@ class PyWebViewService {
   private visionAiListeners: Set<VisionAiListener> = new Set();
   private screenshotErrorListeners: Set<ScreenshotErrorListener> = new Set();
   private speechActivityListeners: Set<SpeechActivityListener> = new Set();
-  private readyPromise: Promise<boolean> | null = null;
 
   constructor() {
     this.initEventListeners();
@@ -174,40 +175,67 @@ class PyWebViewService {
     return () => this.screenshotErrorListeners.delete(cb);
   }
 
-  private async waitForBridge(timeoutMs = 3000): Promise<boolean> {
-    if (window.pywebview?.api) return true;
-    if (this.readyPromise) return this.readyPromise;
-
-    this.readyPromise = new Promise<boolean>((resolve) => {
-      let resolved = false;
-      const onReady = () => {
-        if (!resolved) {
-          resolved = true;
-          window.removeEventListener('pywebviewready', onReady);
-          resolve(true);
-        }
-      };
-      window.addEventListener('pywebviewready', onReady);
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          window.removeEventListener('pywebviewready', onReady);
-          resolve(!!window.pywebview?.api);
-        }
-      }, timeoutMs);
-    });
-
-    return this.readyPromise;
+  public isBridgeReady(): boolean {
+    return Boolean(
+      window.pywebview?.api &&
+        typeof (window.pywebview.api as any).get_sessions === 'function'
+    );
   }
 
-  private async callBridge(method: string, args: any[] = []): Promise<any> {
+  public async waitForBridge(timeoutMs = 12000): Promise<boolean> {
+    if (this.isBridgeReady()) return true;
+
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+
+      const finish = (ok: boolean) => {
+        if (!resolved) {
+          resolved = true;
+          window.removeEventListener('pywebviewready', onReady);
+          clearInterval(interval);
+          clearTimeout(timer);
+          resolve(ok);
+        }
+      };
+
+      const onReady = () => {
+        if (this.isBridgeReady()) {
+          finish(true);
+        }
+      };
+
+      window.addEventListener('pywebviewready', onReady);
+
+      // Fast active polling (every 40ms) to detect bridge immediately upon injection
+      const interval = setInterval(() => {
+        if (this.isBridgeReady()) {
+          finish(true);
+        }
+      }, 40);
+
+      const timer = setTimeout(() => {
+        finish(this.isBridgeReady());
+      }, timeoutMs);
+    });
+  }
+
+  private async callBridge(method: string, args: any[] = [], timeoutMs = 10000): Promise<any> {
     await this.waitForBridge();
 
     // 1. Pywebview API (first priority)
     if (window.pywebview?.api && typeof (window.pywebview.api as any)[method] === 'function') {
       try {
         const fn = (window.pywebview.api as any)[method];
-        return await fn(...args);
+        let timer: any;
+        const timeoutPromise = new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`Timeout calling bridge method [${method}] after ${timeoutMs}ms`));
+          }, timeoutMs);
+        });
+
+        const result = await Promise.race([fn(...args), timeoutPromise]);
+        clearTimeout(timer);
+        return result;
       } catch (err) {
         console.error(`Error in pywebview bridge call [${method}]:`, err);
         throw err;
@@ -388,14 +416,57 @@ class PyWebViewService {
     return res;
   }
 
-  public async saveSession(id: string, title: string, notes: string, messages: any[], highlights?: any[]): Promise<boolean> {
-    const res = await this.callBridge('save_session', [id, title, notes, messages, highlights || []]);
+  public async saveSession(
+    id: string,
+    title: string,
+    notes: string,
+    messages: any[],
+    highlights?: any[],
+    promptHighlight?: string,
+    promptImage?: string
+  ): Promise<boolean> {
+    const res = await this.callBridge('save_session', [
+      id,
+      title,
+      notes,
+      messages,
+      highlights || [],
+      promptHighlight !== undefined ? promptHighlight : null,
+      promptImage !== undefined ? promptImage : null,
+    ]);
     return res ?? true;
   }
 
   public async deleteSession(id: string): Promise<boolean> {
     const res = await this.callBridge('delete_session', [id]);
     return res ?? true;
+  }
+
+  public async getDefaultPrompts(): Promise<{ highlight: string; image: string }> {
+    const res = await this.callBridge('get_default_prompts');
+    if (res) return res;
+    return {
+      highlight: `You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity).\nTone & Style:\n- Casual, clear, and friendly.\n- Explain any technical words or concepts in simple layman's terms so any reader can understand.\nFormatting:\n- Summarize the key information using clear bullet points.\n- Straight to the point without conversational filler, long dashes (like --- or —), or decorators.\n- Provide complete, well-formed, and comprehensive explanations.`,
+      image: `You are an ambient multimodal Windows Copilot companion.\nAnalyze the provided screenshot with high precision.\nRULES:\n- Summary First: Begin with 1-2 concise sentences stating the purpose of what the user is doing or needs to know from the image.\n- Highlights: Use short bullet points to highlight only the most critical parts (active window, key content, errors, code, or data).\n- Tone: Casual and plain English. If technical terms are present, explain what they mean simply in layman's terms.\n- Formatting: No decorators, no long dashes (like --- or —). Provide a complete and well-structured breakdown.`,
+    };
+  }
+
+  public async setWindowOpacity(opacity: number): Promise<{ status: string; opacity: number }> {
+    // Clamp to 0.5 - 1.0
+    const clamped = Math.max(0.5, Math.min(1.0, opacity));
+    const res = await this.callBridge('set_window_opacity', [clamped]);
+    // Apply CSS opacity fallback for dev browser preview
+    try {
+      document.documentElement.style.opacity = String(clamped);
+    } catch {}
+    if (res) return res;
+    return { status: 'ok', opacity: clamped };
+  }
+
+  public async getWindowOpacity(): Promise<number> {
+    const res = await this.callBridge('get_window_opacity');
+    if (typeof res === 'number') return res;
+    return 1.0;
   }
 
   public async toggleAlwaysOnTop(): Promise<boolean> {
