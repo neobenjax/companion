@@ -317,10 +317,10 @@
 ### Subtask 10.8: Release v0.6.0 & Standalone Windows Packaging
 - [x] Merge `feature/transparency-font-prompts` into `main`
 - [x] Bump version to `0.6.0` across `pyproject.toml`, `frontend/package.json`, and `build_exe.py`
-- [ ] Push `main` and tag `v0.6.0` to GitHub
-- [ ] Build standalone Windows `.exe` and package `AmbientCopilot-v0.6.0-windows-x64.zip`
-- [ ] Publish GitHub Release `v0.6.0` with release binary archive asset attached
-- [ ] Purge `feature/transparency-font-prompts` branch locally and remotely
+- [x] Push `main` and tag `v0.6.0` to GitHub
+- [x] Build standalone Windows `.exe` and package `AmbientCopilot-v0.6.0-windows-x64.zip`
+- [x] Publish GitHub Release `v0.6.0` with release binary archive asset attached
+- [x] Purge `feature/transparency-font-prompts` branch locally and remotely
 
 
 
