@@ -42,16 +42,26 @@ An ambient, always-on-top desktop companion for Windows that merges the meeting 
 - **Uninterrupted Background Capture:**
   - Recording, loopback audio, and live Whisper transcription continue running seamlessly in the background while interacting with highlights, opening menus, or querying the AI.
 
+- **Window Transparency Slider (50% – 100%):**
+  - Smooth application opacity slider in the title bar allowing background windows to show through without losing legibility.
+
+- **Independent Always-On-Top Font Controls:**
+  - Pinned transcript header with dedicated `-` / `+` font sizing for live transcripts.
+  - Independent font scaling for the AI thread sidepanel.
+
+- **Per-Conversation AI Prompts:**
+  - Customize AI system instructions and persona per session note for tailored highlights and screenshot explanations.
+
 ---
 
 ## Getting Started
 
 ### Prerequisites
 - Windows 10/11
-- Python 3.11+
+- Python 3.11+ (or [`uv`](https://github.com/astral-sh/uv))
 - Node.js 18+
 
-### Installation
+### Installation & Launch
 
 1. **Clone the repository:**
    ```bash
@@ -59,13 +69,7 @@ An ambient, always-on-top desktop companion for Windows that merges the meeting 
    cd companion
    ```
 
-2. **Set up Python Virtual Environment:**
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\pip install -e .
-   ```
-
-3. **Install Frontend Dependencies & Build:**
+2. **Install Frontend Dependencies & Build:**
    ```powershell
    cd frontend
    npm install
@@ -73,8 +77,14 @@ An ambient, always-on-top desktop companion for Windows that merges the meeting 
    cd ..
    ```
 
-4. **Run the Application:**
+3. **Run the Application (Recommended with `uv`):**
    ```powershell
+   uv run python run.py
+   ```
+   *Alternatively, if using a standard python venv:*
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\pip install -e .
    .\.venv\Scripts\python.exe run.py
    ```
 
@@ -84,6 +94,10 @@ An ambient, always-on-top desktop companion for Windows that merges the meeting 
 
 To run with live Vite hot reloading:
 ```powershell
+uv run python run.py --dev
+```
+*Or with venv:*
+```powershell
 .\.venv\Scripts\python.exe run.py --dev
 ```
 
@@ -92,6 +106,10 @@ To run with live Vite hot reloading:
 ## Testing
 
 Run the automated test suite with pytest:
+```powershell
+uv run pytest tests/
+```
+*Or with venv:*
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/
 ```

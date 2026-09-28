@@ -9,6 +9,7 @@ interface TranscriptItemProps {
   onHighlightClick?: (highlight: HighlightData) => void;
   onManualHighlight?: (messageId: string, text: string, speaker: 'caller' | 'me', timestamp: number) => void;
   messageId?: string;
+  fontSize?: number;
 }
 
 interface ContextMenuPosition {
@@ -23,6 +24,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
   onHighlightClick,
   onManualHighlight,
   messageId,
+  fontSize = 12,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null);
   const textRef = useRef<HTMLParagraphElement>(null);
@@ -219,7 +221,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
   return (
     <div
       id={`msg-${segment.id}`}
-      className="group px-3 py-1.5 rounded-lg text-xs transition-all duration-300 hover:bg-zinc-900/60 border border-transparent select-none relative"
+      className="group px-3 py-1.5 rounded-lg transition-all duration-300 hover:bg-zinc-900/60 border border-transparent select-none relative"
     >
       <div className="flex items-center justify-between space-x-2 mb-0.5 select-none">
         <span
@@ -238,7 +240,8 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
       <p
         ref={textRef}
         onContextMenu={handleContextMenu}
-        className="text-zinc-300 leading-relaxed text-xs pl-0.5 select-text"
+        className="text-zinc-300 pl-0.5 select-text"
+        style={{ fontSize: `${fontSize}px`, lineHeight: 1.55 }}
       >
         {renderHighlightedContent()}
       </p>

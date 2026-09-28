@@ -16,6 +16,10 @@ interface ChatFeedProps {
   onUpdateCard: (messageId: string, updatedCard: ActionCardData) => void;
   isRecording: boolean;
   speechActivity?: { is_speaking: boolean; speaker: string };
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
+  hasCustomPrompts?: boolean;
+  onOpenPromptsModal?: () => void;
 }
 
 export const ChatFeed: React.FC<ChatFeedProps> = ({
@@ -29,6 +33,10 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   onUpdateCard,
   isRecording,
   speechActivity,
+  fontSize = 12,
+  onFontSizeChange,
+  hasCustomPrompts = false,
+  onOpenPromptsModal,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -55,9 +63,9 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-      {/* Session Header (Granola style) */}
-      <div className="pb-3 border-b border-zinc-800/80 space-y-2 select-none">
+    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+      {/* Session Header (Pinned Always-on-Top Bar) */}
+      <div className="shrink-0 z-20 bg-zinc-950/95 border-b border-zinc-800/80 px-4 pt-3 pb-2.5 backdrop-blur-md space-y-2 select-none">
         {isEditingTitle ? (
           <input
             type="text"
@@ -78,7 +86,7 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
           </h1>
         )}
 
-        <div className="flex items-center space-x-2 text-[11px] text-zinc-400 select-none">
+        <div className="flex items-center space-x-2 text-[11px] text-zinc-400 select-none flex-wrap gap-y-1">
           <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800">
             <Calendar size={12} className="text-zinc-500" />
             <span>Today</span>
@@ -93,56 +101,107 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
               <span>Transcribing Speech...</span>
             </div>
           )}
+          {hasCustomPrompts && onOpenPromptsModal && (
+            <button
+              onClick={onOpenPromptsModal}
+              className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-800/60 text-[10px] text-purple-300 font-medium hover:bg-purple-900/60 transition"
+              title="Custom AI instructions active for this note (click to view/edit)"
+            >
+              <Sparkles size={11} className="text-purple-400 animate-pulse" />
+              <span>Custom Persona Active</span>
+            </button>
+          )}
+
+          {/* Independent Font Size Controls Pinned in Chat Header */}
+          {onFontSizeChange && (
+            <div
+              className="ml-auto flex items-center space-x-0.5 bg-zinc-800/80 border border-zinc-700/60 rounded px-1.5 py-0.5 select-none"
+              title="Transcript font size (click number to reset to 12px)"
+            >
+              <button
+                type="button"
+                onClick={() => onFontSizeChange(Math.max(11, fontSize - 1))}
+                disabled={fontSize <= 11}
+                className="px-1.5 py-0.5 text-zinc-400 hover:text-zinc-100 disabled:opacity-30 text-xs font-mono font-bold leading-none transition"
+                title="Decrease transcript font size"
+              >
+                -
+              </button>
+              <button
+                type="button"
+                onClick={() => onFontSizeChange(12)}
+                className="px-1 text-[11px] font-mono text-zinc-300 hover:text-purple-300 leading-none transition"
+                title="Reset to default 12px"
+              >
+                {fontSize}px
+              </button>
+              <button
+                type="button"
+                onClick={() => onFontSizeChange(Math.min(22, fontSize + 1))}
+                disabled={fontSize >= 22}
+                className="px-1.5 py-0.5 text-zinc-400 hover:text-zinc-100 disabled:opacity-30 text-xs font-mono font-bold leading-none transition"
+                title="Increase transcript font size"
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Stream Messages */}
-      {messages.length === 0 ? (
-        <div className="py-16 text-center text-zinc-500 text-xs space-y-2 select-none">
-          <Sparkles size={24} className="mx-auto text-purple-400/60 animate-pulse" />
-          <p className="font-medium text-zinc-400">Ambient Copilot is ready.</p>
-          <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
-            Click <strong className="text-zinc-300">[Record]</strong> below to transcribe speech.
-            Press the global hotkey anytime to trigger the Antigravity Agent on the last 10s excerpt.
-          </p>
-        </div>
-      ) : (
-        messages.map((msg) => {
-          if (msg.type === 'transcript') {
-            return (
-              <TranscriptItem
-                key={msg.id}
-                messageId={msg.id}
-                segment={{
-                  id: msg.segmentId || msg.id,
-                  timestamp: msg.timestamp,
-                  speaker: msg.speaker || 'me',
-                  text: msg.content || '',
-                }}
-                highlights={highlights}
-                onHighlightClick={onHighlightClick}
-                onManualHighlight={onManualHighlight}
-              />
-            );
-          }
+      {/* Dedicated Scroll Container for Conversation Messages */}
+      <div
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-4"
+        style={{ fontSize: `${fontSize}px` }}
+      >
+        {/* Stream Messages */}
+        {messages.length === 0 ? (
+          <div className="py-16 text-center text-zinc-500 text-xs space-y-2 select-none">
+            <Sparkles size={24} className="mx-auto text-purple-400/60 animate-pulse" />
+            <p className="font-medium text-zinc-400">Ambient Copilot is ready.</p>
+            <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">
+              Click <strong className="text-zinc-300">[Record]</strong> below to transcribe speech.
+              Press the global hotkey anytime to trigger the Antigravity Agent on the last 10s excerpt.
+            </p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            if (msg.type === 'transcript') {
+              return (
+                <TranscriptItem
+                  key={msg.id}
+                  messageId={msg.id}
+                  segment={{
+                    id: msg.segmentId || msg.id,
+                    timestamp: msg.timestamp,
+                    speaker: msg.speaker || 'me',
+                    text: msg.content || '',
+                  }}
+                  highlights={highlights}
+                  onHighlightClick={onHighlightClick}
+                  onManualHighlight={onManualHighlight}
+                  fontSize={fontSize}
+                />
+              );
+            }
 
-          if (msg.type === 'intent_trigger') {
-            return null; // Highlights are displayed in-place within the transcript
-          }
+            if (msg.type === 'intent_trigger') {
+              return null; // Highlights are displayed in-place within the transcript
+            }
 
-          if (msg.type === 'user') {
-            return (
-              <div key={msg.id} className="flex justify-end my-2 select-none">
-                <div className="max-w-[85%] px-3 py-2 rounded-lg bg-purple-600 text-white text-xs shadow">
-                  <div className="flex items-center space-x-1 mb-0.5 opacity-80 text-[10px]">
-                    <User size={10} />
-                    <span>You</span>
+            if (msg.type === 'user') {
+              return (
+                <div key={msg.id} className="flex justify-end my-2 select-none">
+                  <div className="max-w-[85%] px-3 py-2 rounded-lg bg-purple-600 text-white shadow">
+                    <div className="flex items-center space-x-1 mb-0.5 opacity-80 text-[10px]">
+                      <User size={10} />
+                      <span>You</span>
+                    </div>
+                    <p style={{ fontSize: `${fontSize}px`, lineHeight: 1.55 }}>{msg.content}</p>
                   </div>
-                  <p>{msg.content}</p>
                 </div>
-              </div>
-            );
-          }
+              );
+            }
 
           if (msg.type === 'screenshot' && msg.screenshot) {
             const shot = msg.screenshot;
@@ -247,7 +306,10 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
                 )}
 
                 {/* Markdown content */}
-                <div className="text-zinc-100 text-xs leading-relaxed whitespace-pre-wrap">
+                <div
+                  className="text-zinc-100 leading-relaxed whitespace-pre-wrap"
+                  style={{ fontSize: `${fontSize}px`, lineHeight: 1.55 }}
+                >
                   {msg.content}
                 </div>
 
@@ -292,7 +354,8 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
         </div>
       )}
 
-      <div ref={feedEndRef} />
+        <div ref={feedEndRef} />
+      </div>
     </div>
   );
 };

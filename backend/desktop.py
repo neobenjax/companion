@@ -111,7 +111,7 @@ def start_native_app():
         text_select=True,
         background_color="#09090b",
     )
-    bridge.set_window(window)
+    bridge._set_window(window)
 
     def on_window_ready():
         print("\n" + "=" * 65, flush=True)
@@ -121,6 +121,11 @@ def start_native_app():
         print(f"  - Coordinates: X={x}, Y={y}, Size={width}x{height}", flush=True)
         print(f"  - Always on Top: {on_top}", flush=True)
         print(f"  - Global Audio Intent Hotkey: {config.get('audio_intent_hotkey', '<ctrl>+<shift>+a')}", flush=True)
+
+        saved_opacity = max(0.5, min(1.0, float(config.get("window_opacity", 1.0))))
+        if saved_opacity < 1.0:
+            print(f"  - Configured Window Opacity: {int(saved_opacity * 100)}%", flush=True)
+
         print("=" * 65 + "\n", flush=True)
 
     try:

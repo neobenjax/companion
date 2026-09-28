@@ -7,6 +7,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { FloatingActionsModal } from './components/FloatingActionsModal';
 import { ThreadSidepanel } from './components/ThreadSidepanel';
 import { TargetPickerPopover } from './components/TargetPickerPopover';
+import { SessionPromptModal } from './components/SessionPromptModal';
 import {
   ChatMessage,
   Session,
@@ -40,6 +41,31 @@ export const App: React.FC = () => {
     speaker: 'me',
   });
 
+  // App Opacity (50% to 100%)
+  const [opacity, setOpacity] = useState<number>(() => {
+    const saved = localStorage.getItem('companion_opacity');
+    return saved ? Math.max(0.5, Math.min(1.0, parseFloat(saved))) : 1.0;
+  });
+
+  // Independent Font Sizes (Transcript & Sidepanel)
+  const [chatFontSize, setChatFontSize] = useState<number>(() => {
+    const saved = localStorage.getItem('companion_chat_font_size');
+    return saved ? Math.max(11, Math.min(22, parseInt(saved, 10))) : 12;
+  });
+  const [sidepanelFontSize, setSidepanelFontSize] = useState<number>(() => {
+    const saved = localStorage.getItem('companion_sidepanel_font_size');
+    return saved ? Math.max(11, Math.min(22, parseInt(saved, 10))) : 13;
+  });
+
+  // Per-Session AI Prompt Modal State
+  const [isPromptsModalOpen, setIsPromptsModalOpen] = useState<boolean>(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<{ highlight: string; image: string }>({
+    highlight: '',
+    image: '',
+  });
+
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+
   const [recordingState, setRecordingState] = useState<RecordingState>({
     is_recording: false,
     is_paused: false,
@@ -64,6 +90,8 @@ export const App: React.FC = () => {
   const highlightsRef = useRef<HighlightData[]>([]);
   const activeSessionRef = useRef<Session | null>(null);
   const settingsRef = useRef<Settings>(settings);
+  const isInitializingRef = useRef<boolean>(false);
+  const isLoadedRef = useRef<boolean>(false);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -81,7 +109,7 @@ export const App: React.FC = () => {
     settingsRef.current = settings;
   }, [settings]);
 
-  // Continuous debounced auto-save (500ms) for active session messages and highlights
+  // Continuous debounced auto-save (500ms) for active session messages, highlights, and prompts
   useEffect(() => {
     if (!activeSession?.id) return;
     const timer = setTimeout(() => {
@@ -90,11 +118,13 @@ export const App: React.FC = () => {
         activeSession.title,
         activeSession.notes || '',
         messages,
-        highlights
+        highlights,
+        activeSession.prompt_highlight,
+        activeSession.prompt_image
       );
     }, 500);
     return () => clearTimeout(timer);
-  }, [messages, highlights, activeSession?.id, activeSession?.title, activeSession?.notes]);
+  }, [messages, highlights, activeSession?.id, activeSession?.title, activeSession?.notes, activeSession?.prompt_highlight, activeSession?.prompt_image]);
 
   // Flush save on window unload
   useEffect(() => {
@@ -105,7 +135,9 @@ export const App: React.FC = () => {
           activeSessionRef.current.title,
           activeSessionRef.current.notes || '',
           messagesRef.current,
-          highlightsRef.current
+          highlightsRef.current,
+          activeSessionRef.current.prompt_highlight,
+          activeSessionRef.current.prompt_image
         );
       }
     };
@@ -287,24 +319,116 @@ export const App: React.FC = () => {
   }, []);
 
   const loadInitialData = async () => {
+    if (isInitializingRef.current || isLoadedRef.current) {
+      return;
+    }
+    isInitializingRef.current = true;
+
     try {
+      const bridgeConnected = await pywebviewService.waitForBridge(12000);
+      if (!bridgeConnected) {
+        console.warn('[App] pywebview bridge did not report ready within timeout');
+      }
+
       const s = await pywebviewService.getSettings();
       setSettings(s);
       setAlwaysOnTop(s.always_on_top ?? true);
 
+      // Load default prompt templates from backend
+      try {
+        const defPrompts = await pywebviewService.getDefaultPrompts();
+        if (defPrompts) {
+          setDefaultPrompts(defPrompts);
+        }
+      } catch (err) {
+        console.warn('Could not fetch default prompts:', err);
+      }
+
+      // Query sessions from database
       const sessList = await pywebviewService.getSessions();
       setSessions(sessList);
 
-      if (sessList.length > 0) {
-        // Select the most recent session with content, or fall back to the newest session
-        const sessionToOpen = sessList.find((sess) => (sess.notes_preview || '').length > 0) || sessList[0];
+      if (sessList && sessList.length > 0) {
+        // Priority 1: Restore user's last active chat from localStorage if it exists
+        const lastActiveId = localStorage.getItem('companion_active_session_id');
+        const matched = lastActiveId ? sessList.find((sess) => sess.id === lastActiveId) : null;
+
+        // Priority 2: Session with content or the newest session in the list
+        const sessionToOpen =
+          matched ||
+          sessList.find((sess) => (sess.notes_preview || '').length > 0) ||
+          sessList[0];
+
         await selectSession(sessionToOpen.id);
-      } else {
+      } else if (bridgeConnected) {
+        // Only create a brand new session if bridge is verified connected and DB is truly empty
         await createNewSession();
       }
+
+      // Restore and apply saved opacity AFTER sessions have loaded
+      const savedOp = localStorage.getItem('companion_opacity');
+      const targetOp = savedOp ? parseFloat(savedOp) : (s.window_opacity ?? 1.0);
+      const clampedOp = Math.max(0.5, Math.min(1.0, targetOp));
+      setOpacity(clampedOp);
+      if (clampedOp < 1.0) {
+        // Only make the native IPC call if non-default opacity is configured
+        pywebviewService.setWindowOpacity(clampedOp);
+      }
+
+      isLoadedRef.current = true;
     } catch (e) {
       console.error('Failed to load initial data:', e);
+    } finally {
+      isInitializingRef.current = false;
+      setIsInitializing(false);
     }
+  };
+
+  const handleOpacityChange = (val: number) => {
+    const clamped = Math.max(0.5, Math.min(1.0, val));
+    setOpacity(clamped);
+    localStorage.setItem('companion_opacity', String(clamped));
+    pywebviewService.setWindowOpacity(clamped);
+  };
+
+  const handleChatFontSizeChange = (size: number) => {
+    const clamped = Math.max(11, Math.min(22, size));
+    setChatFontSize(clamped);
+    localStorage.setItem('companion_chat_font_size', String(clamped));
+  };
+
+  const handleSidepanelFontSizeChange = (size: number) => {
+    const clamped = Math.max(11, Math.min(22, size));
+    setSidepanelFontSize(clamped);
+    localStorage.setItem('companion_sidepanel_font_size', String(clamped));
+  };
+
+  const handleSavePrompts = async (promptHighlight: string, promptImage: string) => {
+    if (!activeSession) return;
+    const hasCustom = Boolean(promptHighlight.trim() || promptImage.trim());
+    const updated: Session = {
+      ...activeSession,
+      prompt_highlight: promptHighlight,
+      prompt_image: promptImage,
+      has_custom_prompts: hasCustom,
+    };
+    setActiveSession(updated);
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === updated.id
+          ? { ...s, prompt_highlight: promptHighlight, prompt_image: promptImage, has_custom_prompts: hasCustom }
+          : s
+      )
+    );
+    await pywebviewService.saveSession(
+      updated.id,
+      updated.title,
+      updated.notes || '',
+      messagesRef.current,
+      highlightsRef.current,
+      promptHighlight,
+      promptImage
+    );
   };
 
   const createNewSession = async () => {
@@ -317,12 +441,15 @@ export const App: React.FC = () => {
           activeSessionRef.current.title,
           activeSessionRef.current.notes || '',
           messagesRef.current,
-          highlightsRef.current
+          highlightsRef.current,
+          activeSessionRef.current.prompt_highlight,
+          activeSessionRef.current.prompt_image
         );
       }
       const newSess = await pywebviewService.createSession('New note');
       setSessions((prev) => [newSess, ...prev]);
       setActiveSession(newSess);
+      localStorage.setItem('companion_active_session_id', newSess.id);
       setMessages([]);
       setHighlights([]);
       setActiveHighlightForModal(null);
@@ -349,13 +476,16 @@ export const App: React.FC = () => {
           activeSessionRef.current.title,
           activeSessionRef.current.notes || '',
           messagesRef.current,
-          highlightsRef.current
+          highlightsRef.current,
+          activeSessionRef.current.prompt_highlight,
+          activeSessionRef.current.prompt_image
         );
       }
 
       const sess = await pywebviewService.getSession(id);
       if (sess) {
         setActiveSession(sess);
+        localStorage.setItem('companion_active_session_id', id);
         setMessages(sess.messages || []);
         setHighlights(sess.highlights || []);
         setActiveHighlightForModal(null);
@@ -390,7 +520,15 @@ export const App: React.FC = () => {
     const updated = { ...activeSession, title: newTitle };
     setActiveSession(updated);
     setSessions((prev) => prev.map((s) => (s.id === updated.id ? { ...s, title: newTitle } : s)));
-    pywebviewService.saveSession(updated.id, newTitle, updated.notes || '', messages, highlightsRef.current);
+    pywebviewService.saveSession(
+      updated.id,
+      newTitle,
+      updated.notes || '',
+      messages,
+      highlightsRef.current,
+      updated.prompt_highlight,
+      updated.prompt_image
+    );
   };
 
   const handleUpdateCard = (msgId: string, updatedCard: ActionCardData) => {
@@ -595,7 +733,10 @@ export const App: React.FC = () => {
           activeSessionRef.current.id,
           activeSessionRef.current.title,
           activeSessionRef.current.notes || '',
-          next
+          next,
+          highlightsRef.current,
+          activeSessionRef.current.prompt_highlight,
+          activeSessionRef.current.prompt_image
         );
       }
       return next;
@@ -685,7 +826,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans border border-zinc-800/80 shadow-2xl">
-      {/* TitleBar */}
+      {/* TitleBar with Opacity Slider */}
       <TitleBar
         alwaysOnTop={alwaysOnTop}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
@@ -696,6 +837,8 @@ export const App: React.FC = () => {
         onToggleSidepanel={() => handleToggleSidepanel()}
         sidepanelOpen={isSidepanelOpen}
         savedCount={savedHighlightsCount}
+        opacity={opacity}
+        onOpacityChange={handleOpacityChange}
       />
 
       {/* Main Workspace Area (HUD + Right Sidepanel) */}
@@ -713,18 +856,29 @@ export const App: React.FC = () => {
 
         {/* Center Unified Chronological Stream */}
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-zinc-950 relative min-w-[340px]">
-          <ChatFeed
-            title={activeSession?.title || 'New note'}
-            onUpdateTitle={handleUpdateTitle}
-            messages={messages}
-            highlights={highlights}
-            onHighlightClick={handleHighlightClick}
-            onManualHighlight={handleManualHighlight}
-            onScreenshotClick={handleScreenshotClick}
-            onUpdateCard={handleUpdateCard}
-            isRecording={recordingState.is_recording}
-            speechActivity={speechActivity}
-          />
+          {isInitializing && !activeSession ? (
+            <div className="flex-1 flex flex-col items-center justify-center space-y-3 select-none text-zinc-500">
+              <div className="w-7 h-7 rounded-full border-2 border-purple-500/30 border-t-purple-400 animate-spin" />
+              <p className="text-xs font-medium text-zinc-400">Loading Ambient Copilot...</p>
+            </div>
+          ) : (
+            <ChatFeed
+              title={activeSession?.title || 'New note'}
+              onUpdateTitle={handleUpdateTitle}
+              messages={messages}
+              highlights={highlights}
+              onHighlightClick={handleHighlightClick}
+              onManualHighlight={handleManualHighlight}
+              onScreenshotClick={handleScreenshotClick}
+              onUpdateCard={handleUpdateCard}
+              isRecording={recordingState.is_recording}
+              speechActivity={speechActivity}
+              fontSize={chatFontSize}
+              onFontSizeChange={handleChatFontSizeChange}
+              hasCustomPrompts={Boolean(activeSession?.prompt_highlight?.trim() || activeSession?.prompt_image?.trim())}
+              onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
+            />
+          )}
 
           {/* Floating Actions Modal (Screenshot) */}
           {activeScreenshotForModal && (
@@ -803,6 +957,10 @@ export const App: React.FC = () => {
               setSidepanelWidth(w);
               pywebviewService.resizeWindow(true, 540 + w);
             }}
+            fontSize={sidepanelFontSize}
+            onFontSizeChange={handleSidepanelFontSizeChange}
+            hasCustomPrompts={Boolean(activeSession?.prompt_highlight?.trim() || activeSession?.prompt_image?.trim())}
+            onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
             onSelectHighlight={(hl) => {
               setActiveThreadScreenshot(null);
               setActiveThreadHighlightId(hl.id);
@@ -843,6 +1001,15 @@ export const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
+      />
+
+      {/* Per-Session AI Prompt Modal */}
+      <SessionPromptModal
+        isOpen={isPromptsModalOpen}
+        onClose={() => setIsPromptsModalOpen(false)}
+        session={activeSession}
+        onSavePrompts={handleSavePrompts}
+        defaultPrompts={defaultPrompts}
       />
     </div>
   );

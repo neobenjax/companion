@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pin, PinOff, Minus, X, Settings as SettingsIcon, Sidebar as SidebarIcon, Mic, PanelRight } from 'lucide-react';
+import { Pin, PinOff, Minus, X, Settings as SettingsIcon, Sidebar as SidebarIcon, Mic, PanelRight, SunMedium } from 'lucide-react';
 import { pywebviewService } from '../services/pywebview';
 
 interface TitleBarProps {
@@ -12,6 +12,8 @@ interface TitleBarProps {
   onToggleSidepanel?: () => void;
   sidepanelOpen?: boolean;
   savedCount?: number;
+  opacity?: number;
+  onOpacityChange?: (val: number) => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -24,6 +26,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onToggleSidepanel,
   sidepanelOpen = false,
   savedCount = 0,
+  opacity = 1.0,
+  onOpacityChange,
 }) => {
   return (
     <div className="flex items-center justify-between h-10 px-3 bg-zinc-900/90 border-b border-zinc-800/80 backdrop-blur-md text-zinc-300 z-50 select-none">
@@ -39,14 +43,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </button>
       </div>
 
-      {/* Middle Brand Area: Strictly the only Draggable Window Region */}
-      <div className="drag-region flex-1 flex items-center space-x-2 px-2 h-full cursor-move">
-        <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50 pointer-events-none" />
-        <span className="text-xs font-semibold tracking-wide text-zinc-200 pointer-events-none">
+      {/* Middle Brand Area: Draggable Window Region */}
+      <div className="drag-region flex-1 flex items-center space-x-2 px-2 h-full cursor-move min-w-0">
+        <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50 pointer-events-none shrink-0" />
+        <span className="text-xs font-semibold tracking-wide text-zinc-200 pointer-events-none truncate">
           Ambient Copilot
         </span>
         {isRecording && (
-          <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-red-950/70 border border-red-800/60 text-[10px] text-red-300 animate-pulse pointer-events-none">
+          <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-red-950/70 border border-red-800/60 text-[10px] text-red-300 animate-pulse pointer-events-none shrink-0">
             <Mic size={10} className="text-red-400" />
             <span>LIVE</span>
           </div>
@@ -54,7 +58,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       </div>
 
       {/* Right Control Cluster: Non-draggable, click-safe */}
-      <div className="flex items-center space-x-1 shrink-0">
+      <div className="flex items-center space-x-1.5 shrink-0">
+        {/* Transparency Slider Control (50% - 100%) */}
+        {onOpacityChange && (
+          <div
+            className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-zinc-800/70 border border-zinc-700/60 text-zinc-400 mr-1"
+            title={`Application Opacity: ${Math.round(opacity * 100)}% (50% - 100%)`}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <SunMedium size={13} className="text-zinc-400 shrink-0" />
+            <input
+              type="range"
+              min="50"
+              max="100"
+              step="5"
+              value={Math.round(opacity * 100)}
+              onChange={(e) => onOpacityChange(Number(e.target.value) / 100)}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-14 h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+            />
+            <span className="text-[10px] font-mono text-zinc-300 w-6 text-right select-none">
+              {Math.round(opacity * 100)}%
+            </span>
+          </div>
+        )}
+
         <button
           onClick={onToggleAlwaysOnTop}
           onMouseDown={(e) => e.stopPropagation()}
