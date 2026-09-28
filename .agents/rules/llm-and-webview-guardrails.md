@@ -1,6 +1,6 @@
 ---
 name: llm-and-webview-guardrails
-description: Critical guardrails for LLM generation parameters (thinking tokens, headroom) and Windows WebView2 desktop app packaging.
+description: Critical guardrails for LLM generation parameters (thinking tokens, headroom), Windows WebView2 desktop packaging, and WinForms/WebView2 concurrency and deadlock prevention.
 trigger: always_on
 ---
 
@@ -27,3 +27,13 @@ trigger: always_on
 - Always log:
   - **Outbound:** Model name, target/highlight ID, generation parameters (`temperature`, `thinking_budget`), and query excerpt.
   - **Inbound:** Finish reason (`STOP`, `MAX_TOKENS`), token usage breakdown (`prompt`, `candidates`, `thoughts`, `total`), response word count, and content.
+
+## 4. WinForms & WebView2 Concurrency & Deadlock Prevention
+- **Non-blocking UI Thread Invocations**:
+  In WinForms bridges, never call synchronous `form.Invoke(...)` from Python background threads. `form.Invoke` blocks the calling thread waiting for the message loop. When pywebview is simultaneously evaluating JavaScript (`window.evaluate_js` acquiring synchronization semaphores), calling `form.Invoke` deadlocks the UI pump. Always use non-blocking `form.BeginInvoke(System.Action(...))` or direct Win32 calls.
+- **Single-Flight Startup & Re-entrancy Locks**:
+  Never register redundant `window.addEventListener('pywebviewready')` handlers inside React components if an IPC service already awaits or polls `waitForBridge()`. Doing so triggers duplicate concurrent initialization pipelines. Always guard initial data loading with re-entrancy refs (`isInitializingRef`, `isLoadedRef`).
+- **Per-Call IPC Safety Timeouts**:
+  Wrap all bridge method calls in JavaScript with a `Promise.race` safety timeout (e.g. 10s) with graceful fallbacks. No IPC bridge call should ever hang an `await` indefinitely.
+- **No Background Timers During Window Creation**:
+  Never spawn uncoordinated background timers (`threading.Timer`) to manipulate window properties or opacity while Microsoft CoreWebView2 is initializing COM controllers and navigating. Apply initial styles after the DOM and session state are ready.
