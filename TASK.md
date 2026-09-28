@@ -311,8 +311,16 @@
 - [x] Add 10-second safety timeout on `callBridge` in `frontend/src/services/pywebview.ts` to prevent UI Promise hangs
 - [x] Sequence startup queries in `loadInitialData` and only apply non-100% opacity after session retrieval completes
 - [x] Run test suite (`uv run pytest tests/` - 21 passed) and production build (`npm run build`)
-- [ ] Update walkthrough guide with root cause analysis and manual verification steps
-- [ ] Await user review and approval before stashing, committing, pushing, and merging to main
+- [x] Update walkthrough guide with root cause analysis and manual verification steps
+- [x] Await user review and approval before stashing, committing, pushing, and merging to main
+
+### Subtask 10.8: Release v0.6.0 & Standalone Windows Packaging
+- [x] Merge `feature/transparency-font-prompts` into `main`
+- [x] Bump version to `0.6.0` across `pyproject.toml`, `frontend/package.json`, and `build_exe.py`
+- [ ] Push `main` and tag `v0.6.0` to GitHub
+- [ ] Build standalone Windows `.exe` and package `AmbientCopilot-v0.6.0-windows-x64.zip`
+- [ ] Publish GitHub Release `v0.6.0` with release binary archive asset attached
+- [ ] Purge `feature/transparency-font-prompts` branch locally and remotely
 
 
 

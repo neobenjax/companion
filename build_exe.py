@@ -55,7 +55,15 @@ def build():
     print(f"\n[Build] SUCCESS: Binary executable created at: {exe_file}", flush=True)
 
     # Step 3: Package into release zip for GitHub
-    zip_path = root / "dist" / "AmbientCopilot-v0.5.0-windows-x64.zip"
+    version = "0.6.0"
+    try:
+        import tomllib
+        with open(root / "pyproject.toml", "rb") as f:
+            data = tomllib.load(f)
+            version = data.get("project", {}).get("version", version)
+    except Exception:
+        pass
+    zip_path = root / "dist" / f"AmbientCopilot-v{version}-windows-x64.zip"
     print(f"[Build] Step 3: Compressing into release archive: {zip_path}...", flush=True)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for file in output_dir.rglob("*"):
