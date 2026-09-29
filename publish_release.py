@@ -36,15 +36,21 @@ def publish():
         pass
 
     tag = f"v{version}"
-    release_name = f"Ambient Copilot v{version} - Mark-of-the-Web Fix, Instant Splash Screen & 52% Smaller Package"
+    release_name = f"Ambient Copilot v{version} - Prompt Preset Engine, Dynamic Variables & Per-Session Switch Guardrails"
     release_body = f"""## What's Changed in v{version}
 
-### Fixes & Enhancements
-- **Mark-of-the-Web / .NET CLR Resolution**: Fixed `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize` when launching from browser Downloads folders by adding an automatic Win32 startup unblocker and bundling `AmbientCopilot.exe.config` with `<loadFromRemoteSources enabled="true"/>`.
-- **Instant Visual Feedback (Native Splash Screen)**: Built-in PyInstaller C bootloader splash screen appears within ~100ms of clicking `AmbientCopilot.exe`, giving immediate visual confirmation that the application is starting.
-- **Single-Instance Mutex**: Added Win32 Named Mutex protection (`Global\AmbientCopilot_SingleInstance_Mutex`). Rapidly double-clicking the executable now activates the existing instance rather than launching duplicate conflicting processes.
-- **52% Smaller Download Package (>328 MB Eliminated)**: Cleaned out redundant PyTorch dependencies. The `_internal` directory shrank from 600 MB to 272 MB, and the release `.zip` package dropped from 250 MB to **120 MB**.
-- **Cold Startup Boost**: Drastically faster launch times as Windows no longer needs to map heavy unused libraries into memory.
+### Highlights & New Features
+- **Prompt Preset Engine**: Pre-configured, high-impact personas for live meetings and interviews:
+  - *Standard Ambient Copilot*: Casual, clear bullet summaries and layman explanations.
+  - *Live Verbal Interview Copilot*: Frameworks optimized for spoken delivery (*Opening Hook*, *Core Architecture*, *Code Example*, and *Senior Nuance / Interviewer Trap*).
+  - *Standard Visual Assistant*: Multimodal analysis of active window or screen.
+  - *Live Coding & Algorithm Analyzer*: Instantly diagnoses code challenges and algorithms with "Think Out Loud" talking tracks.
+  - *Executive Briefing* & *Layman Explainer*: Fast business summaries and everyday analogies.
+- **Dynamic Context Variables**: Safe XML-fenced interpolation of `{{{{selected_text}}}}`, `{{{{full_transcript_recent}}}}`, `{{{{window_title}}}}`, `{{{{process_name}}}}`, and `{{{{timestamp}}}}`.
+- **Per-Session Preset Customization & Storage**: Each preset can be independently customized per session, preserving edits across preset toggles.
+- **Dual Unsaved Changes Guard**: Inviolable protection against losing custom prompt edits when switching either presets or tabs (*Keep editing*, *Lose changes*, and *Save and Switch*).
+- **Targeted Single-Preset Reset**: "Reset to Defaults" reverts only the currently selected preset, leaving other customizations intact.
+- **Terminology Alignment**: Full migration from "Audio" to "Transcript" across HUD, settings, and session dialogs.
 
 ### Installation & Standalone Binary
 Download `AmbientCopilot-v{version}-windows-x64.zip`, extract to any folder, and run `AmbientCopilot.exe`.
