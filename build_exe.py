@@ -24,6 +24,8 @@ def build():
         "--clean",
         "--noconfirm",
         f"--add-data={dist_frontend};frontend/dist",
+        "--collect-all=pythonnet",
+        "--collect-all=clr_loader",
         "--collect-all=webview",
         "--collect-all=faster_whisper",
         "--collect-all=ctranslate2",
@@ -31,6 +33,7 @@ def build():
         "--collect-all=mss",
         "--collect-all=PIL",
         "--collect-all=google.genai",
+        "--hidden-import=clr",
         "--hidden-import=backend",
         "--hidden-import=backend.desktop",
         "--hidden-import=backend.bridge",
@@ -51,6 +54,18 @@ def build():
     exe_file = output_dir / "AmbientCopilot.exe"
     if not exe_file.exists():
         raise RuntimeError(f"Expected executable {exe_file} was not produced!")
+
+    # Step 2.1: Ensure root folder contains Python runtime DLLs alongside AmbientCopilot.exe
+    # This guarantees that .NET CLR and Win32 LoadLibrary find pythonXX.dll on clean Windows machines
+    internal_dir = output_dir / "_internal"
+    if internal_dir.exists():
+        print("\n[Build] Step 2.1: Copying runtime DLLs to application root...", flush=True)
+        for dll_pattern in ["python3*.dll", "python*.dll", "vcruntime140*.dll", "msvcp140*.dll"]:
+            for dll_file in internal_dir.glob(dll_pattern):
+                target_dest = output_dir / dll_file.name
+                if not target_dest.exists():
+                    shutil.copy2(dll_file, target_dest)
+                    print(f"  - Placed in root: {dll_file.name}", flush=True)
 
     print(f"\n[Build] SUCCESS: Binary executable created at: {exe_file}", flush=True)
 

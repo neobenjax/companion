@@ -322,5 +322,22 @@
 - [x] Publish GitHub Release `v0.6.0` with release binary archive asset attached
 - [x] Purge `feature/transparency-font-prompts` branch locally and remotely
 
+## Phase 11: Standalone Windows Binary Runtime DLL & CLR Fix
+### Subtask 11.1: Launcher Environment Configuration
+- [x] Add `PYTHONNET_PYDLL` dynamic discovery and environment configuration to `run.py`
+- [x] Prepend `_internal/` to `PATH` and invoke `kernel32.SetDllDirectoryW` in `run.py`
+
+### Subtask 11.2: Packaging Updates
+- [x] Add `--collect-all=pythonnet`, `--collect-all=clr_loader`, and `--hidden-import=clr` to `build_exe.py`
+- [x] Copy `python313.dll`, `python3.dll`, and `vcruntime140*.dll` directly into root folder next to `AmbientCopilot.exe`
+
+### Subtask 11.3: Verification & Walkthrough
+- [x] Run test suite (`uv run pytest tests/`)
+- [x] Rebuild standalone executable (`uv run python build_exe.py`)
+- [x] Verify execution in isolated environment simulating machine without Python installed
+- [ ] Prepare walkthrough guide and await user testing & approval
+
+
+
 
 
