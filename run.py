@@ -4,6 +4,29 @@ import subprocess
 import time
 from pathlib import Path
 
+# CRITICAL for frozen PyInstaller builds on clean Windows machines:
+# Explicitly resolve and configure the Python C-runtime DLL for pythonnet (clr / clr_loader)
+# and ensure _internal is registered with Windows SetDllDirectory and PATH.
+if getattr(sys, "frozen", False) and sys.platform == "win32":
+    exe_dir = Path(sys.executable).parent
+    meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
+    py_dll_name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
+
+    for candidate_dir in [exe_dir, meipass, exe_dir / "_internal", meipass / "_internal"]:
+        candidate_dll = candidate_dir / py_dll_name
+        if candidate_dll.exists():
+            os.environ["PYTHONNET_PYDLL"] = str(candidate_dll.resolve())
+            break
+
+    for candidate_dir in [exe_dir / "_internal", meipass, exe_dir]:
+        if candidate_dir.exists():
+            os.environ["PATH"] = str(candidate_dir.resolve()) + os.pathsep + os.environ.get("PATH", "")
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetDllDirectoryW(str(candidate_dir.resolve()))
+            except Exception:
+                pass
+
 
 def ensure_default_desktop():
     """
