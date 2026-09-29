@@ -337,11 +337,11 @@
 - [x] Prepare walkthrough guide and await user testing & approval
 
 ### Subtask 11.4: Release v0.6.1 & Standalone Packaging Publication
-- [ ] Commit version bump (`0.6.1`) across `pyproject.toml`, `frontend/package.json`, `publish_release.py` on `main`
-- [ ] Push `main` and tag `v0.6.1` to GitHub
-- [ ] Rebuild standalone Windows executable (`uv run python build_exe.py`) to produce `dist/AmbientCopilot-v0.6.1-windows-x64.zip`
-- [ ] Publish GitHub Release `v0.6.1` with zip binary asset attached
-- [ ] Purge `feature/fix-standalone-runtime-dll` branch locally and remotely
+- [x] Commit version bump (`0.6.1`) across `pyproject.toml`, `frontend/package.json`, `publish_release.py` on `main`
+- [x] Push `main` and tag `v0.6.1` to GitHub
+- [x] Rebuild standalone Windows executable (`uv run python build_exe.py`) to produce `dist/AmbientCopilot-v0.6.1-windows-x64.zip`
+- [x] Publish GitHub Release `v0.6.1` with zip binary asset attached
+- [x] Purge `feature/fix-standalone-runtime-dll` branch locally and remotely
 
 
 
