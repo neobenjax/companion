@@ -373,33 +373,101 @@
 
 ## Phase 13: Prompt Preset Engine & Dynamic Variable Injection
 ### Subtask 13.1: Specification, Planning & User Alignment
-- [/] Design PromptPreset schema and dynamic variable interpolation engine (`{{selected_text}}`, `{{full_transcript_recent}}`, `{{window_title}}`, `{{process_name}}`, `{{timestamp}}`)
-- [/] Draft system security guardrails against malicious meta-prompting and system prompt override
+- [x] Design PromptPreset schema and dynamic variable interpolation engine (`{{selected_text}}`, `{{full_transcript_recent}}`, `{{window_title}}`, `{{process_name}}`, `{{timestamp}}`)
+- [x] Draft multi-source security guardrails against meta-prompting from prompt overrides, transcription, and vision image content
 - [x] Create Implementation Plan artifact (`prompt_preset_engine.md`)
-- [/] Align with user on implementation plan and check for missing details
+- [x] Align with user on implementation plan and finalize design decisions (countdown cancel auto-switch, configurable hotkey in Settings, global presets tab with reset)
 
-### Subtask 13.2: Backend Preset Engine & Security Guardrails
-- [ ] Implement `backend/agent/presets.py` with `PromptPreset`, `PresetStore`, and `BUILTIN_PRESETS`
-- [ ] Add Configuration A (`interview-audio-speech`) and Configuration B (`interview-vision-code-eval`)
-- [ ] Implement `SecurityGuardrail` with immutable system boundary and XML untrusted data fencing
-- [ ] Implement `VariableInterpolator` with safe context extraction from audio ring buffer and active Win32 window
-- [ ] Implement `ContextResolver` for process matching (`targetAppPatterns`) and active window detection
+### Subtask 13.2: Backend Preset Engine & Multi-Source Security Guardrails
+- [x] Implement `backend/agent/presets.py` with `PromptPreset`, `PresetStore`, and `BUILTIN_PRESETS`
+- [x] Add Configuration A (`interview-audio-speech`), Configuration B (`interview-vision-code-eval`), and classic quick presets (`executive-briefing`, `layman-explainer`)
+- [x] Implement `MultiSourceSecurityGuardrail` enforcing immutable security boundary across templates, live transcription, and vision screenshot inputs
+- [x] Implement `VariableInterpolator` with safe XML-fencing for `{{selected_text}}`, `{{full_transcript_recent}}`, `{{window_title}}`, `{{process_name}}`, `{{timestamp}}`
+- [x] Implement `ContextResolver` for process matching (`targetAppPatterns`) and active foreground window detection
+- [x] Add configuration support in `backend/config.py` for `preset_switcher_hotkey` (default `<ctrl>+p`), `default_audio_preset_id`, `default_vision_preset_id`
+- [x] Update `backend/storage/session_db.py` to persist per-session active presets (`active_audio_preset_id`, `active_vision_preset_id`)
 
 ### Subtask 13.3: Bridge Integration & Agent Orchestrator Updates
-- [ ] Update `AgentOrchestrator` to accept resolved presets and safe interpolated prompt payloads
-- [ ] Add IPC bridge methods (`get_presets`, `save_preset`, `delete_preset`, `get_active_preset`, `set_active_preset`, `detect_active_context`, `render_preset_preview`)
-- [ ] Wire audio intent and vision queries through preset engine
+- [x] Update `AgentOrchestrator` to accept resolved presets, enforce guardrails, and execute interpolated prompt templates
+- [x] Wire rolling audio ring buffer context (60-90s) into `analyze_intent`
+- [x] Add IPC bridge methods (`get_presets`, `save_preset`, `delete_preset`, `reset_presets_to_default`, `get_active_preset`, `set_active_preset`, `detect_active_context`, `render_preset_preview`)
+- [x] Register global preset switcher shortcut in `HotkeyManager`
 
 ### Subtask 13.4: Frontend UI Integration (Low Cognitive Load & Power User Tools)
-- [ ] Define TypeScript interfaces (`PromptPreset`, `PresetCategory`, `ActiveContextInfo`) in `types/index.ts`
-- [ ] Add bridge service wrappers in `services/pywebview.ts`
-- [ ] Build `PresetQuickSelector` compact pill component with dropdown and `Ctrl+P` hotkey
-- [ ] Build `AutoDetectionBanner` subtle non-intrusive notification chip with one-click Undo
-- [ ] Enhance `SessionPromptModal` into full Preset & Prompt Manager with dynamic variable insertion chips and live preview
+- [x] Define TypeScript interfaces (`PromptPreset`, `PresetCategory`, `ActiveContextInfo`) in `types/index.ts`
+- [x] Add bridge service wrappers in `services/pywebview.ts`
+- [x] Build `PresetQuickSelector` compact pill component with dropdown, hotkey badge, and quick edit button
+- [x] Build `AutoDetectionBanner` floating chip with 4s countdown auto-switch and `[Cancel]` / `[Switch Now]` controls
+- [x] Update `SettingsModal` with configurable `Preset Switcher Shortcut` and new **Presets Tab** (view, edit, global reset)
+- [x] Enhance `SessionPromptModal` into per-session **Prompt & Preset Manager** with variable insertion chips and live preview
 
 ### Subtask 13.5: Testing, Verification & Walkthrough Guide
-- [ ] Create automated unit tests for preset loading, variable interpolation, and prompt injection defense
-- [ ] Create automated integration tests for bridge IPC preset operations
-- [ ] Build frontend and verify zero compilation errors
-- [ ] Execute manual verification scenarios (ambient default, verbal interview, vision coding assessment, guardrails)
-- [ ] Prepare comprehensive Walkthrough Guide (`walkthrough.md`) and await user review & approval
+- [x] Create automated unit tests (`tests/test_presets.py`) for preset loading, variable interpolation, and multi-source injection defense
+- [x] Build frontend and verify zero compilation errors (`npm run build`)
+- [x] Run full pytest suite (`uv run pytest tests/` - 29 passed)
+- [x] Prepare comprehensive Walkthrough Guide (`walkthrough.md`) and await user review & approval
+
+## Phase 14: Transcript Terminology, Global Preset Customization & Session Refresh Fix
+### Subtask 14.1: UI Label Migration from "Audio" to "Transcript"
+- [x] Update `SettingsModal.tsx`: Tab label ("General & Transcript"), shortcut label ("Transcript Highlight Shortcut"), default dropdown ("Default Transcript Preset:"), filter button ("Transcript (4)")
+- [x] Update `SessionPromptModal.tsx`: Tab label ("Transcript Prompt Preset"), context labels ("Rolling Transcript (75s)")
+- [x] Update `PresetQuickSelector.tsx`: Category group header ("Transcript Presets (Spoken Context)")
+
+### Subtask 14.2: Global Preset Customization / Override in Settings Tab
+- [x] Build expandable preset editor in `SettingsModal.tsx` for each preset card (System Instruction, User Prompt Template, Dynamic Variable chips, and Save/Revert buttons)
+- [x] Connect preset editing to `pywebviewService.savePreset` to persist global customization in `presets.json`
+- [x] Update `backend/bridge.py` `create_session` to automatically assign configured default presets (`default_audio_preset_id`, `default_vision_preset_id`) to new sessions
+
+### Subtask 14.3: Per-Session Preset Refresh Bug Fix
+- [x] Update `SessionPromptModal.tsx` `handleSelectPreset` to dynamically refresh the custom instruction textarea whenever a preset is clicked
+- [x] Ensure selecting "Standard Ambient Copilot" resets textarea to blank (`""`), and selecting other presets populates with their instructions
+- [x] Eliminate the bug where previous preset text remains stuck in the textarea
+
+### Subtask 14.4: Verification, Automated Tests & Walkthrough
+- [x] Add unit test verifying `create_session` inherits default preset IDs from config and global preset editing
+- [x] Compile frontend (`npm run build`) and run pytest suite (`uv run pytest tests/` - 30 passed)
+- [x] Update `walkthrough.md` with manual test steps for global overrides and session refresh
+- [x] Review with user and await explicit approval before committing or merging
+
+## Phase 15: Session Presets Initial Load & Unsaved Changes Guard
+### Subtask 15.1: Initial Prompt Loading Based on Active Preset
+- [x] In `SessionPromptModal.tsx`, resolve and load the active preset's `systemInstruction` immediately on open if `prompt_highlight` / `prompt_image` is not explicitly set
+- [x] Support full fallback hierarchy: global preset prompt from `presets.json` $\rightarrow$ per-session saved override $\rightarrow$ factory shipped default fail-safe
+- [x] If a specialized preset (e.g. `interview-audio-speech`, `interview-vision-code-eval`) is active, immediately populate its prompt into the textarea upon opening
+
+### Subtask 15.2: Unsaved Edits Detection & Confirmation Dialog
+- [x] Track baseline prompt state in `SessionPromptModal.tsx` to detect dirty text edits
+- [x] When user clicks another preset while dirty, display confirmation prompt with "Cancel" (discard and switch), "Save current edit" (save and switch), and "Keep editing"
+- [x] If user clicks "Save current edit", save the modifications to session settings and switch to the new preset
+- [x] If user clicks "Cancel", discard edits and switch to the new preset with its default/saved state
+
+### Subtask 15.3: Verification & Walkthrough Update
+- [x] Build frontend (`npm run build`) and run backend tests (`uv run pytest tests/` - 30 passed)
+- [x] Update `walkthrough.md` with manual test scenarios
+- [x] Review with user and gather refined behavior requirements
+
+## Phase 16: Per-Session Preset Customization & Guardrail Refinements
+### Subtask 16.1: Active Preset Initial Prompt Population
+- [x] In `SessionPromptModal.tsx`, ensure the active preset's configured instruction is always loaded and displayed in the textarea upon opening (never blank)
+- [x] Support intentional empty prompt if user explicitly erases all text, with backend factory fallback
+
+### Subtask 16.2: Unsaved Changes Guard for Presets & Tabs
+- [x] Implement Unsaved Changes warning dialog when user modifies prompt and attempts to switch presets
+- [x] Implement Unsaved Changes warning dialog when user modifies prompt and attempts to switch tabs (Transcript <-> Vision)
+- [x] Set exact Dialog Title: `"Unsaved changes"`
+- [x] Set exact Dialog Warning: `"You have modified the prompt for this preset. Switching before saving will discard your edits unless saved."`
+- [x] Provide three action buttons: `"Keep editing"`, `"Lose changes"`, and `"Save and Switch"`
+
+### Subtask 16.3: Per-Preset In-Session Persistence
+- [x] Maintain per-preset prompt state (`preset_prompts`) in `SessionPromptModal.tsx` so each preset preserves its edits within the session
+- [x] Add `preset_prompts_json` to `backend/storage/session_db.py` to persist per-preset customizations across sessions
+- [x] Wire `preset_prompts` through `App.tsx` and bridge IPC `saveSession`
+
+### Subtask 16.4: Single-Preset Reset Scope
+- [x] Update "Reset to Defaults" to revert only the currently selected preset to its global default instruction, keeping other presets untouched
+
+### Subtask 16.5: Automated Verification & Manual Walkthrough
+- [x] Run backend tests (`uv run pytest tests/ -v` - 31 passed)
+- [x] Compile frontend (`npm run build` - zero errors)
+- [x] Prepare comprehensive manual testing walkthrough in `walkthrough.md`
+- [ ] Await user review and approval before committing or merging

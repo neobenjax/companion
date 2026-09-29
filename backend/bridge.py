@@ -19,6 +19,14 @@ from backend.agent.orchestrator import (
 )
 from backend.agent.tools import execute_tool
 from backend.vision.capture import VisionCaptureManager
+from backend.agent.presets import (
+    PromptPreset,
+    PresetStore,
+    VariableInterpolator,
+    ContextResolver,
+    MultiSourceSecurityGuardrail,
+    BUILTIN_PRESETS,
+)
 
 
 def _normalize_id(id_val: Any) -> str:
@@ -40,6 +48,7 @@ class CompanionBridge:
         self._window: Optional[webview.Window] = None
         self._config = load_config()
         self._storage = SessionStorage()
+        self._preset_store = PresetStore()
 
         # Audio and buffer
         self._buffer = RollingTranscriptBuffer(max_retention_sec=900.0)
@@ -78,6 +87,9 @@ class CompanionBridge:
         vision_hotkey = self._config.get("vision_intent_hotkey", "<ctrl>+<shift>+v")
         self._hotkeys.register(vision_hotkey, self._on_vision_hotkey_fired)
 
+        preset_hotkey = self._config.get("preset_switcher_hotkey", "<ctrl>+p")
+        self._hotkeys.register(preset_hotkey, self._on_preset_hotkey_fired)
+
     def _emit_to_ui(self, func_name: str, data: Any):
         if hasattr(self, "_emit_custom") and self._emit_custom:
             self._emit_custom(func_name, data)
@@ -106,6 +118,10 @@ class CompanionBridge:
         print("[Bridge] Global vision shortcut fired -> Capturing target")
         self.capture_selected_target()
 
+    def _on_preset_hotkey_fired(self):
+        print("[Bridge] Global preset switcher shortcut fired")
+        self._emit_to_ui("onTriggerPresetSwitcher", {})
+
     # --- JS Exposed Methods (Only public methods without leading '_') ---
 
     def get_settings(self) -> Dict[str, Any]:
@@ -114,13 +130,19 @@ class CompanionBridge:
     def save_settings(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
         old_audio_hotkey = self._config.get("audio_intent_hotkey")
         old_vision_hotkey = self._config.get("vision_intent_hotkey")
+        old_preset_hotkey = self._config.get("preset_switcher_hotkey")
         old_whisper_model = self._config.get("whisper_model")
         self._config = save_config(settings_data)
 
         # Update hotkeys if changed
         new_audio_hotkey = self._config.get("audio_intent_hotkey")
         new_vision_hotkey = self._config.get("vision_intent_hotkey")
-        if old_audio_hotkey != new_audio_hotkey or old_vision_hotkey != new_vision_hotkey:
+        new_preset_hotkey = self._config.get("preset_switcher_hotkey")
+        if (
+            old_audio_hotkey != new_audio_hotkey
+            or old_vision_hotkey != new_vision_hotkey
+            or old_preset_hotkey != new_preset_hotkey
+        ):
             self._hotkeys.unregister_all()
             self._init_hotkeys()
 
@@ -226,6 +248,7 @@ class CompanionBridge:
         highlight_id: str = "",
         text: str = "",
         custom_instruction: Optional[str] = None,
+        preset_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         if isinstance(session_id, dict):
             d = session_id
@@ -233,24 +256,56 @@ class CompanionBridge:
             highlight_id = d.get("highlight_id", "")
             text = d.get("text", "")
             custom_instruction = d.get("custom_instruction", None)
+            preset_id = d.get("preset_id", None)
 
         sid = _normalize_id(session_id)
-        # Resolve prompt instruction: explicitly passed > session db record > None (agent falls back to default)
+        sess_rec = self._storage.get_session(sid) if sid else None
+
+        # Resolve active preset for transcription: explicitly passed > session preset > global default
+        active_preset_id = preset_id
+        if not active_preset_id and sess_rec:
+            active_preset_id = sess_rec.get("active_audio_preset_id")
+        if not active_preset_id:
+            active_preset_id = self._config.get("default_audio_preset_id", "default-audio-ambient")
+
+        preset = self._preset_store.get_preset(active_preset_id) or self._preset_store.get_preset("default-audio-ambient")
+
+        # Resolve system instruction: explicit override > session preset_prompts[preset] > session prompt_highlight > preset systemInstruction
         instruction_to_use = custom_instruction
-        if instruction_to_use is None and sid:
-            sess_rec = self._storage.get_session(sid)
-            if sess_rec:
-                instruction_to_use = sess_rec.get("prompt_highlight")
+        if instruction_to_use is None and sess_rec:
+            sess_preset_prompts = sess_rec.get("preset_prompts") or {}
+            if active_preset_id in sess_preset_prompts:
+                custom_for_preset = sess_preset_prompts[active_preset_id]
+                if custom_for_preset and custom_for_preset.strip():
+                    instruction_to_use = custom_for_preset.strip()
+            if instruction_to_use is None:
+                sess_custom = sess_rec.get("prompt_highlight")
+                if sess_custom and sess_custom.strip():
+                    instruction_to_use = sess_custom.strip()
+        if instruction_to_use is None and preset:
+            instruction_to_use = preset.systemInstruction
+
+        # Interpolate variables into template
+        tpl = preset.userPromptTemplate if preset else "The user wants to expand on the following content:\n{{selected_text}}\n\nContext:\n{{full_transcript_recent}}"
+        recent_text = self._buffer.get_recent_text(duration_sec=75.0)["text"]
+        win_info = ContextResolver.get_active_window_info()
+        rendered_prompt = VariableInterpolator.interpolate(
+            template=tpl,
+            selected_text=text,
+            full_transcript_recent=recent_text,
+            window_title=win_info.get("window_title", ""),
+            process_name=win_info.get("process_name", ""),
+        )
 
         def _worker():
             try:
-                print(f"[Bridge] >>> Triggering AI highlight query for: '{text}' (Highlight ID: {highlight_id})", flush=True)
-                prompt = f"The user wants to expand on the following content: {text}"
+                print(f"[Bridge] >>> Triggering AI highlight query for: '{text}' (Preset: {active_preset_id}, Highlight ID: {highlight_id})", flush=True)
                 result = self._agent.analyze_intent(
-                    text_excerpt=prompt,
+                    text_excerpt=text,
                     is_hotkey=True,
                     segment_ids=[],
                     custom_system_instruction=instruction_to_use,
+                    custom_user_prompt=rendered_prompt,
                 )
                 highlight_update = {
                     "id": highlight_id,
@@ -362,6 +417,7 @@ class CompanionBridge:
         prompt: str = "",
         target_title: str = "",
         custom_instruction: Optional[str] = None,
+        preset_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         if isinstance(session_id, dict):
             d = session_id
@@ -371,20 +427,54 @@ class CompanionBridge:
             prompt = d.get("prompt", "")
             target_title = d.get("target_title", "")
             custom_instruction = d.get("custom_instruction", None)
+            preset_id = d.get("preset_id", None)
 
         sid = _normalize_id(session_id)
+        sess_rec = self._storage.get_session(sid) if sid else None
+
+        active_preset_id = preset_id
+        if not active_preset_id and sess_rec:
+            active_preset_id = sess_rec.get("active_vision_preset_id")
+        if not active_preset_id:
+            active_preset_id = self._config.get("default_vision_preset_id", "default-vision-ambient")
+
+        preset = self._preset_store.get_preset(active_preset_id) or self._preset_store.get_preset("default-vision-ambient")
+
         instruction_to_use = custom_instruction
-        if instruction_to_use is None and sid:
-            sess_rec = self._storage.get_session(sid)
-            if sess_rec:
-                instruction_to_use = sess_rec.get("prompt_image")
+        if instruction_to_use is None and sess_rec:
+            sess_preset_prompts = sess_rec.get("preset_prompts") or {}
+            if active_preset_id in sess_preset_prompts:
+                custom_for_preset = sess_preset_prompts[active_preset_id]
+                if custom_for_preset and custom_for_preset.strip():
+                    instruction_to_use = custom_for_preset.strip()
+            if instruction_to_use is None:
+                sess_custom = sess_rec.get("prompt_image")
+                if sess_custom and sess_custom.strip():
+                    instruction_to_use = sess_custom.strip()
+        if instruction_to_use is None and preset:
+            instruction_to_use = preset.systemInstruction
+
+        # Resolve prompt: if direct prompt passed, use that; else interpolate preset template
+        if prompt and prompt.strip():
+            rendered_prompt = prompt.strip()
+        elif preset:
+            win_info = ContextResolver.get_active_window_info()
+            w_title = target_title or win_info.get("window_title", "Active Window")
+            p_name = win_info.get("process_name", "Application")
+            rendered_prompt = VariableInterpolator.interpolate(
+                template=preset.userPromptTemplate,
+                window_title=w_title,
+                process_name=p_name,
+            )
+        else:
+            rendered_prompt = f"What is happening in this '{target_title}' snapshot?"
 
         def _worker():
             try:
-                print(f"[Bridge] >>> Triggering Vision AI query for: '{target_title}' (Image ID: {image_id})", flush=True)
+                print(f"[Bridge] >>> Triggering Vision AI query for: '{target_title}' (Preset: {active_preset_id}, Image ID: {image_id})", flush=True)
                 result = self._agent.analyze_vision(
                     image_path=image_path,
-                    prompt=prompt,
+                    prompt=rendered_prompt,
                     target_title=target_title,
                     custom_system_instruction=instruction_to_use,
                 )
@@ -463,7 +553,14 @@ class CompanionBridge:
         return self._storage.list_sessions()
 
     def create_session(self, title: str = "New note") -> Dict[str, Any]:
-        sess = self._storage.create_session(title=title)
+        cfg = load_config()
+        default_audio = cfg.get("default_audio_preset_id", "default-audio-ambient")
+        default_vision = cfg.get("default_vision_preset_id", "default-vision-ambient")
+        sess = self._storage.create_session(
+            title=title,
+            active_audio_preset_id=default_audio,
+            active_vision_preset_id=default_vision,
+        )
         self._active_session_id = sess["id"]
         self._buffer.clear()
         return sess
@@ -485,6 +582,9 @@ class CompanionBridge:
         highlights: Any = None,
         prompt_highlight: Any = _SENTINEL,
         prompt_image: Any = _SENTINEL,
+        active_audio_preset_id: Any = _SENTINEL,
+        active_vision_preset_id: Any = _SENTINEL,
+        preset_prompts: Any = _SENTINEL,
     ) -> bool:
         if isinstance(session_id, dict):
             d = session_id
@@ -497,6 +597,12 @@ class CompanionBridge:
                 prompt_highlight = d["prompt_highlight"]
             if "prompt_image" in d:
                 prompt_image = d["prompt_image"]
+            if "active_audio_preset_id" in d:
+                active_audio_preset_id = d["active_audio_preset_id"]
+            if "active_vision_preset_id" in d:
+                active_vision_preset_id = d["active_vision_preset_id"]
+            if "preset_prompts" in d:
+                preset_prompts = d["preset_prompts"]
 
         sid = _normalize_id(session_id)
         if not sid:
@@ -510,6 +616,9 @@ class CompanionBridge:
             highlights=highlights,
             prompt_highlight=prompt_highlight,
             prompt_image=prompt_image,
+            active_audio_preset_id=active_audio_preset_id,
+            active_vision_preset_id=active_vision_preset_id,
+            preset_prompts=preset_prompts,
         )
 
     def delete_session(self, session_id: Any = None) -> bool:
@@ -525,6 +634,144 @@ class CompanionBridge:
         return {
             "highlight": DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION,
             "image": DEFAULT_VISION_SYSTEM_INSTRUCTION,
+        }
+
+    # -----------------------------------------------------------------------
+    # Preset Engine IPC Methods
+    # -----------------------------------------------------------------------
+    def get_presets(self) -> List[Dict[str, Any]]:
+        return [p.model_dump() for p in self._preset_store.list_presets()]
+
+    def save_preset(self, preset_data: Any = None) -> Dict[str, Any]:
+        if isinstance(preset_data, dict):
+            try:
+                preset = PromptPreset(**preset_data)
+                success = self._preset_store.save_preset(preset)
+                if success:
+                    presets_list = self.get_presets()
+                    self._emit_to_ui("onPresetsChanged", presets_list)
+                    return {"status": "ok", "preset": preset.model_dump()}
+            except Exception as e:
+                print(f"[Bridge] Error saving preset: {e}")
+                return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Invalid preset data"}
+
+    def delete_preset(self, preset_id: Any = None) -> Dict[str, Any]:
+        if isinstance(preset_id, dict):
+            preset_id = preset_id.get("preset_id") or preset_id.get("id") or ""
+        pid = _normalize_id(preset_id)
+        if not pid:
+            return {"status": "error", "message": "Missing preset_id"}
+        success = self._preset_store.delete_preset(pid)
+        if success:
+            presets_list = self.get_presets()
+            self._emit_to_ui("onPresetsChanged", presets_list)
+            return {"status": "ok", "preset_id": pid}
+        return {"status": "error", "message": "Could not delete preset"}
+
+    def reset_presets_to_default(self) -> List[Dict[str, Any]]:
+        res = self._preset_store.reset_to_defaults()
+        presets_data = [p.model_dump() for p in res]
+        self._emit_to_ui("onPresetsChanged", presets_data)
+        return presets_data
+
+    def get_active_preset(self, session_id: Any = None, category: str = "transcription") -> Dict[str, Any]:
+        if isinstance(session_id, dict):
+            d = session_id
+            session_id = d.get("session_id", "")
+            category = d.get("category", "transcription")
+
+        sid = _normalize_id(session_id)
+        active_id = None
+        if sid:
+            sess = self._storage.get_session(sid)
+            if sess:
+                if category == "vision":
+                    active_id = sess.get("active_vision_preset_id")
+                else:
+                    active_id = sess.get("active_audio_preset_id")
+
+        if not active_id:
+            if category == "vision":
+                active_id = self._config.get("default_vision_preset_id", "default-vision-ambient")
+            else:
+                active_id = self._config.get("default_audio_preset_id", "default-audio-ambient")
+
+        preset = self._preset_store.get_preset(active_id)
+        if not preset:
+            fallback_id = "default-vision-ambient" if category == "vision" else "default-audio-ambient"
+            preset = self._preset_store.get_preset(fallback_id)
+
+        return preset.model_dump() if preset else {}
+
+    def set_active_preset(self, session_id: Any = None, category: str = "transcription", preset_id: str = "") -> Dict[str, Any]:
+        if isinstance(session_id, dict):
+            d = session_id
+            session_id = d.get("session_id", "")
+            category = d.get("category", "transcription")
+            preset_id = d.get("preset_id", "")
+
+        sid = _normalize_id(session_id)
+        pid = str(preset_id).strip()
+
+        if sid:
+            if category == "vision":
+                self._storage.update_session(sid, active_vision_preset_id=pid)
+            else:
+                self._storage.update_session(sid, active_audio_preset_id=pid)
+        else:
+            if category == "vision":
+                self._config["default_vision_preset_id"] = pid
+            else:
+                self._config["default_audio_preset_id"] = pid
+            save_config(self._config)
+
+        self._emit_to_ui("onActivePresetChanged", {
+            "session_id": sid,
+            "category": category,
+            "preset_id": pid,
+        })
+        return {"status": "ok", "session_id": sid, "category": category, "preset_id": pid}
+
+    def detect_active_context(self) -> Dict[str, Any]:
+        win_info = ContextResolver.get_active_window_info()
+        w_title = win_info.get("window_title", "")
+        p_name = win_info.get("process_name", "")
+        presets = self._preset_store.list_presets()
+        matched = ContextResolver.match_preset(presets, window_title=w_title, process_name=p_name)
+        return {
+            "window_title": w_title,
+            "process_name": p_name,
+            "suggested_preset": matched.model_dump() if matched else None,
+        }
+
+    def render_preset_preview(self, preset_id: str = "", sample_text: str = "", window_title: str = "") -> Dict[str, Any]:
+        if isinstance(preset_id, dict):
+            d = preset_id
+            preset_id = d.get("preset_id", "")
+            sample_text = d.get("sample_text", "")
+            window_title = d.get("window_title", "")
+
+        preset = self._preset_store.get_preset(str(preset_id))
+        if not preset:
+            return {"status": "error", "message": f"Preset '{preset_id}' not found"}
+
+        recent_text = self._buffer.get_recent_text(duration_sec=75.0)["text"]
+        win_info = ContextResolver.get_active_window_info()
+        target_win = window_title or win_info.get("window_title", "Sample IDE / Browser")
+        rendered = VariableInterpolator.interpolate(
+            template=preset.userPromptTemplate,
+            selected_text=sample_text or "What are the trade-offs of microservices vs monoliths?",
+            full_transcript_recent=recent_text or "[CALLER]: We are discussing system architecture.\n[ME]: I agree.",
+            window_title=target_win,
+            process_name=win_info.get("process_name", "code.exe"),
+        )
+        guarded_instruction = MultiSourceSecurityGuardrail.build_guarded_system_instruction(preset.systemInstruction)
+        return {
+            "status": "ok",
+            "preset_id": preset.id,
+            "rendered_prompt": rendered,
+            "guarded_system_instruction": guarded_instruction,
         }
 
     # Window controls & Transparency

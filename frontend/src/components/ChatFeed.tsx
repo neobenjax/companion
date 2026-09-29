@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Calendar, Users, Sparkles, ChevronDown, ChevronUp, Bot, User, Zap } from 'lucide-react';
-import { ChatMessage, TranscriptSegment, ActionCardData, HighlightData, ScreenshotData } from '../types';
+import { ChatMessage, TranscriptSegment, ActionCardData, HighlightData, ScreenshotData, PromptPreset } from '../types';
 import { TranscriptItem } from './TranscriptItem';
 import { ActionCard } from './ActionCard';
+import { PresetQuickSelector } from './PresetQuickSelector';
 import { Camera, Monitor, AppWindow } from 'lucide-react';
 
 interface ChatFeedProps {
@@ -20,6 +21,13 @@ interface ChatFeedProps {
   onFontSizeChange?: (size: number) => void;
   hasCustomPrompts?: boolean;
   onOpenPromptsModal?: () => void;
+  activeAudioPreset?: PromptPreset | null;
+  activeVisionPreset?: PromptPreset | null;
+  presets?: PromptPreset[];
+  onSelectPreset?: (preset: PromptPreset) => void;
+  presetHotkeyLabel?: string;
+  isPresetSelectorOpen?: boolean;
+  onClosePresetSelector?: () => void;
 }
 
 export const ChatFeed: React.FC<ChatFeedProps> = ({
@@ -37,6 +45,13 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
   onFontSizeChange,
   hasCustomPrompts = false,
   onOpenPromptsModal,
+  activeAudioPreset,
+  activeVisionPreset,
+  presets,
+  onSelectPreset,
+  presetHotkeyLabel = 'Ctrl+P',
+  isPresetSelectorOpen = false,
+  onClosePresetSelector,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title);
@@ -101,6 +116,21 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({
               <span>Transcribing Speech...</span>
             </div>
           )}
+
+          {/* Quick Preset Selector Pill */}
+          {presets && onSelectPreset && (
+            <PresetQuickSelector
+              activeAudioPreset={activeAudioPreset || null}
+              activeVisionPreset={activeVisionPreset || null}
+              presets={presets}
+              onSelectPreset={onSelectPreset}
+              onOpenPresetManager={onOpenPromptsModal || (() => {})}
+              hotkeyLabel={presetHotkeyLabel}
+              isOpenExternal={isPresetSelectorOpen}
+              onCloseExternal={onClosePresetSelector}
+            />
+          )}
+
           {hasCustomPrompts && onOpenPromptsModal && (
             <button
               onClick={onOpenPromptsModal}

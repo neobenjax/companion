@@ -75,6 +75,25 @@ export interface HighlightData {
   is_saved?: boolean;
 }
 
+export type PresetCategory = 'transcription' | 'vision' | 'compound';
+
+export interface PromptPreset {
+  id: string;
+  name: string;
+  description: string;
+  category: PresetCategory;
+  isBuiltIn: boolean;
+  targetAppPatterns: string[];
+  systemInstruction?: string;
+  userPromptTemplate: string;
+}
+
+export interface ActiveContextInfo {
+  window_title: string;
+  process_name: string;
+  suggested_preset: PromptPreset | null;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -86,11 +105,17 @@ export interface Session {
   prompt_highlight?: string;
   prompt_image?: string;
   has_custom_prompts?: boolean;
+  active_audio_preset_id?: string;
+  active_vision_preset_id?: string;
+  preset_prompts?: Record<string, string>;
 }
 
 export interface Settings {
   audio_intent_hotkey: string;
   vision_intent_hotkey: string;
+  preset_switcher_hotkey?: string;
+  default_audio_preset_id?: string;
+  default_vision_preset_id?: string;
   lookback_duration_sec: number;
   lookback_words?: number;
   whisper_model: string;

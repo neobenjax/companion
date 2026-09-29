@@ -8,6 +8,7 @@ import { FloatingActionsModal } from './components/FloatingActionsModal';
 import { ThreadSidepanel } from './components/ThreadSidepanel';
 import { TargetPickerPopover } from './components/TargetPickerPopover';
 import { SessionPromptModal } from './components/SessionPromptModal';
+import { AutoDetectionBanner } from './components/AutoDetectionBanner';
 import {
   ChatMessage,
   Session,
@@ -18,6 +19,7 @@ import {
   HighlightData,
   CaptureTarget,
   ScreenshotData,
+  PromptPreset,
 } from './types';
 import { pywebviewService } from './services/pywebview';
 
@@ -63,6 +65,15 @@ export const App: React.FC = () => {
     highlight: '',
     image: '',
   });
+
+  // Preset Engine States
+  const [presets, setPresets] = useState<PromptPreset[]>([]);
+  const [activeAudioPreset, setActiveAudioPreset] = useState<PromptPreset | null>(null);
+  const [activeVisionPreset, setActiveVisionPreset] = useState<PromptPreset | null>(null);
+  const [isPresetSelectorOpen, setIsPresetSelectorOpen] = useState<boolean>(false);
+  const [suggestedPreset, setSuggestedPreset] = useState<PromptPreset | null>(null);
+  const [detectedApp, setDetectedApp] = useState<string>('');
+  const [dismissedAutoSwitch, setDismissedAutoSwitch] = useState<Set<string>>(new Set());
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
 
@@ -344,6 +355,14 @@ export const App: React.FC = () => {
         console.warn('Could not fetch default prompts:', err);
       }
 
+      // Load prompt presets
+      try {
+        const pList = await pywebviewService.getPresets();
+        setPresets(pList);
+      } catch (err) {
+        console.warn('Could not fetch presets:', err);
+      }
+
       // Query sessions from database
       const sessList = await pywebviewService.getSessions();
       setSessions(sessList);
@@ -384,6 +403,93 @@ export const App: React.FC = () => {
     }
   };
 
+  // Preset Event Subscriptions and In-Webview Keyboard Shortcut (Ctrl+P)
+  useEffect(() => {
+    const unsubPresets = pywebviewService.onPresetsChanged((newPresets) => {
+      setPresets(newPresets);
+    });
+
+    const unsubPresetHot = pywebviewService.onTriggerPresetSwitcher(() => {
+      setIsPresetSelectorOpen((prev) => !prev);
+    });
+
+    const unsubActivePreset = pywebviewService.onActivePresetChanged(async (data) => {
+      if (data.category === 'vision') {
+        const p = await pywebviewService.getActivePreset(activeSessionRef.current?.id, 'vision');
+        setActiveVisionPreset(p);
+      } else {
+        const p = await pywebviewService.getActivePreset(activeSessionRef.current?.id, 'transcription');
+        setActiveAudioPreset(p);
+      }
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setIsPresetSelectorOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      unsubPresets();
+      unsubPresetHot();
+      unsubActivePreset();
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Background Context Auto-Detection (Polls foreground window / process)
+  useEffect(() => {
+    if (isInitializing || !activeSession) return;
+
+    const checkContext = async () => {
+      try {
+        const info = await pywebviewService.detectActiveContext();
+        if (info && info.suggested_preset && !dismissedAutoSwitch.has(info.suggested_preset.id)) {
+          const currentActive =
+            info.suggested_preset.category === 'vision'
+              ? activeVisionPreset?.id
+              : activeAudioPreset?.id;
+
+          if (currentActive !== info.suggested_preset.id) {
+            setSuggestedPreset(info.suggested_preset);
+            setDetectedApp(info.process_name || info.window_title || 'Active Application');
+          }
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(checkContext, 8000);
+    window.addEventListener('focus', checkContext);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkContext);
+    };
+  }, [isInitializing, activeSession?.id, activeAudioPreset?.id, activeVisionPreset?.id, dismissedAutoSwitch]);
+
+  const handleSelectPreset = async (preset: PromptPreset) => {
+    if (preset.category === 'vision') {
+      setActiveVisionPreset(preset);
+      await pywebviewService.setActivePreset(activeSession?.id || null, 'vision', preset.id);
+    } else {
+      setActiveAudioPreset(preset);
+      await pywebviewService.setActivePreset(activeSession?.id || null, 'transcription', preset.id);
+    }
+  };
+
+  const handleApplySuggestedPreset = (preset: PromptPreset) => {
+    handleSelectPreset(preset);
+    setSuggestedPreset(null);
+  };
+
+  const handleDismissSuggestedPreset = () => {
+    if (suggestedPreset) {
+      setDismissedAutoSwitch((prev) => new Set([...prev, suggestedPreset.id]));
+    }
+    setSuggestedPreset(null);
+  };
+
   const handleOpacityChange = (val: number) => {
     const clamped = Math.max(0.5, Math.min(1.0, val));
     setOpacity(clamped);
@@ -403,20 +509,49 @@ export const App: React.FC = () => {
     localStorage.setItem('companion_sidepanel_font_size', String(clamped));
   };
 
-  const handleSavePrompts = async (promptHighlight: string, promptImage: string) => {
+  const handleSavePrompts = async (
+    promptHighlight: string,
+    promptImage: string,
+    activeAudioPresetId?: string,
+    activeVisionPresetId?: string,
+    presetPrompts?: Record<string, string>
+  ) => {
     if (!activeSession) return;
-    const hasCustom = Boolean(promptHighlight.trim() || promptImage.trim());
+    const hasCustom = Boolean(
+      promptHighlight.trim() ||
+      promptImage.trim() ||
+      (presetPrompts && Object.values(presetPrompts).some((v) => v && v.trim()))
+    );
     const updated: Session = {
       ...activeSession,
       prompt_highlight: promptHighlight,
       prompt_image: promptImage,
       has_custom_prompts: hasCustom,
+      active_audio_preset_id: activeAudioPresetId,
+      active_vision_preset_id: activeVisionPresetId,
+      preset_prompts: presetPrompts || activeSession.preset_prompts || {},
     };
     setActiveSession(updated);
+    if (activeAudioPresetId) {
+      const aud = presets.find((p) => p.id === activeAudioPresetId) || null;
+      if (aud) setActiveAudioPreset(aud);
+    }
+    if (activeVisionPresetId) {
+      const vis = presets.find((p) => p.id === activeVisionPresetId) || null;
+      if (vis) setActiveVisionPreset(vis);
+    }
     setSessions((prev) =>
       prev.map((s) =>
         s.id === updated.id
-          ? { ...s, prompt_highlight: promptHighlight, prompt_image: promptImage, has_custom_prompts: hasCustom }
+          ? {
+              ...s,
+              prompt_highlight: promptHighlight,
+              prompt_image: promptImage,
+              has_custom_prompts: hasCustom,
+              active_audio_preset_id: activeAudioPresetId,
+              active_vision_preset_id: activeVisionPresetId,
+              preset_prompts: presetPrompts || s.preset_prompts || {},
+            }
           : s
       )
     );
@@ -427,7 +562,10 @@ export const App: React.FC = () => {
       messagesRef.current,
       highlightsRef.current,
       promptHighlight,
-      promptImage
+      promptImage,
+      activeAudioPresetId,
+      activeVisionPresetId,
+      presetPrompts || activeSession.preset_prompts || {}
     );
   };
 
@@ -456,6 +594,17 @@ export const App: React.FC = () => {
       setActiveScreenshotForModal(null);
       setActiveThreadHighlightId(null);
       setActiveThreadScreenshot(null);
+
+      try {
+        const [audP, visP] = await Promise.all([
+          pywebviewService.getActivePreset(newSess.id, 'transcription'),
+          pywebviewService.getActivePreset(newSess.id, 'vision'),
+        ]);
+        setActiveAudioPreset(audP);
+        setActiveVisionPreset(visP);
+      } catch (err) {
+        console.warn('Failed to load active presets for new session:', err);
+      }
     } catch (e) {
       console.error('Failed to create session:', e);
     }
@@ -492,6 +641,17 @@ export const App: React.FC = () => {
         setActiveScreenshotForModal(null);
         setActiveThreadHighlightId(null);
         setActiveThreadScreenshot(null);
+
+        try {
+          const [audP, visP] = await Promise.all([
+            pywebviewService.getActivePreset(id, 'transcription'),
+            pywebviewService.getActivePreset(id, 'vision'),
+          ]);
+          setActiveAudioPreset(audP);
+          setActiveVisionPreset(visP);
+        } catch (err) {
+          console.warn('Failed to load active presets for session:', err);
+        }
       }
     } catch (e) {
       console.error('Failed to select session:', e);
@@ -648,7 +808,13 @@ export const App: React.FC = () => {
     await handleToggleSidepanel(true, true);
 
     if (activeSession) {
-      await pywebviewService.askAiAboutHighlight(activeSession.id, hl.id, hl.text);
+      await pywebviewService.askAiAboutHighlight(
+        activeSession.id,
+        hl.id,
+        hl.text,
+        null,
+        activeAudioPreset?.id
+      );
     }
   };
 
@@ -709,7 +875,9 @@ export const App: React.FC = () => {
         shot.id,
         shot.image_path,
         '',
-        shot.target_title
+        shot.target_title,
+        null,
+        activeVisionPreset?.id
       );
     }
   };
@@ -862,22 +1030,41 @@ export const App: React.FC = () => {
               <p className="text-xs font-medium text-zinc-400">Loading Ambient Copilot...</p>
             </div>
           ) : (
-            <ChatFeed
-              title={activeSession?.title || 'New note'}
-              onUpdateTitle={handleUpdateTitle}
-              messages={messages}
-              highlights={highlights}
-              onHighlightClick={handleHighlightClick}
-              onManualHighlight={handleManualHighlight}
-              onScreenshotClick={handleScreenshotClick}
-              onUpdateCard={handleUpdateCard}
-              isRecording={recordingState.is_recording}
-              speechActivity={speechActivity}
-              fontSize={chatFontSize}
-              onFontSizeChange={handleChatFontSizeChange}
-              hasCustomPrompts={Boolean(activeSession?.prompt_highlight?.trim() || activeSession?.prompt_image?.trim())}
-              onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
-            />
+            <>
+              {suggestedPreset && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+                  <AutoDetectionBanner
+                    suggestedPreset={suggestedPreset}
+                    detectedApp={detectedApp}
+                    onApplyPreset={handleApplySuggestedPreset}
+                    onDismiss={handleDismissSuggestedPreset}
+                  />
+                </div>
+              )}
+              <ChatFeed
+                title={activeSession?.title || 'New note'}
+                onUpdateTitle={handleUpdateTitle}
+                messages={messages}
+                highlights={highlights}
+                onHighlightClick={handleHighlightClick}
+                onManualHighlight={handleManualHighlight}
+                onScreenshotClick={handleScreenshotClick}
+                onUpdateCard={handleUpdateCard}
+                isRecording={recordingState.is_recording}
+                speechActivity={speechActivity}
+                fontSize={chatFontSize}
+                onFontSizeChange={handleChatFontSizeChange}
+                hasCustomPrompts={Boolean(activeSession?.prompt_highlight?.trim() || activeSession?.prompt_image?.trim())}
+                onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
+                activeAudioPreset={activeAudioPreset}
+                activeVisionPreset={activeVisionPreset}
+                presets={presets}
+                onSelectPreset={handleSelectPreset}
+                presetHotkeyLabel={settings.preset_switcher_hotkey || 'Ctrl+P'}
+                isPresetSelectorOpen={isPresetSelectorOpen}
+                onClosePresetSelector={() => setIsPresetSelectorOpen(false)}
+              />
+            </>
           )}
 
           {/* Floating Actions Modal (Screenshot) */}
@@ -966,7 +1153,13 @@ export const App: React.FC = () => {
               setActiveThreadHighlightId(hl.id);
               if (!hl.ai_response && activeSession) {
                 setIsLoadingAi(true);
-                pywebviewService.askAiAboutHighlight(activeSession.id, hl.id, hl.text);
+                pywebviewService.askAiAboutHighlight(
+                  activeSession.id,
+                  hl.id,
+                  hl.text,
+                  null,
+                  activeAudioPreset?.id
+                );
               }
             }}
             onBackToHighlights={() => {
@@ -987,7 +1180,9 @@ export const App: React.FC = () => {
                   shot.id,
                   shot.image_path,
                   prompt,
-                  shot.target_title
+                  shot.target_title,
+                  null,
+                  activeVisionPreset?.id
                 );
               }
             }}
@@ -1008,6 +1203,7 @@ export const App: React.FC = () => {
         isOpen={isPromptsModalOpen}
         onClose={() => setIsPromptsModalOpen(false)}
         session={activeSession}
+        presets={presets}
         onSavePrompts={handleSavePrompts}
         defaultPrompts={defaultPrompts}
       />

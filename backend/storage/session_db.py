@@ -49,6 +49,20 @@ def init_db():
             cursor.execute("ALTER TABLE sessions ADD COLUMN prompt_image TEXT DEFAULT NULL")
         except sqlite3.OperationalError:
             pass
+        # Ensure per-session active preset fields exist
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN active_audio_preset_id TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN active_vision_preset_id TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
+        # Ensure per-session preset prompts map exists
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN preset_prompts_json TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -84,7 +98,7 @@ class SessionStorage:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image FROM sessions ORDER BY created_at DESC"
+                    "SELECT id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image, active_audio_preset_id, active_vision_preset_id, preset_prompts_json FROM sessions ORDER BY created_at DESC"
                 )
                 rows = cursor.fetchall()
                 data = [
@@ -98,6 +112,9 @@ class SessionStorage:
                         "highlights": json.loads(r[6] or "[]"),
                         "prompt_highlight": r[7] if len(r) > 7 else None,
                         "prompt_image": r[8] if len(r) > 8 else None,
+                        "active_audio_preset_id": r[9] if len(r) > 9 else None,
+                        "active_vision_preset_id": r[10] if len(r) > 10 else None,
+                        "preset_prompts": json.loads(r[11] or "{}") if len(r) > 11 and r[11] else {},
                     }
                     for r in rows
                 ]
@@ -113,15 +130,19 @@ class SessionStorage:
         title: str = "New note",
         prompt_highlight: Optional[str] = None,
         prompt_image: Optional[str] = None,
+        active_audio_preset_id: Optional[str] = None,
+        active_vision_preset_id: Optional[str] = None,
+        preset_prompts: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         session_id = f"sess_{int(time.time() * 1000)}"
         now = time.time()
+        prompts_map = preset_prompts or {}
         with self._lock:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO sessions (id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (session_id, title, now, now, "", json.dumps([]), json.dumps([]), prompt_highlight, prompt_image),
+                    "INSERT INTO sessions (id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image, active_audio_preset_id, active_vision_preset_id, preset_prompts_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (session_id, title, now, now, "", json.dumps([]), json.dumps([]), prompt_highlight, prompt_image, active_audio_preset_id, active_vision_preset_id, json.dumps(prompts_map)),
                 )
                 conn.commit()
         self.backup_to_json()
@@ -135,13 +156,16 @@ class SessionStorage:
             "highlights": [],
             "prompt_highlight": prompt_highlight,
             "prompt_image": prompt_image,
+            "active_audio_preset_id": active_audio_preset_id,
+            "active_vision_preset_id": active_vision_preset_id,
+            "preset_prompts": prompts_map,
         }
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image FROM sessions WHERE id = ?",
+                "SELECT id, title, created_at, updated_at, notes, messages_json, highlights_json, prompt_highlight, prompt_image, active_audio_preset_id, active_vision_preset_id, preset_prompts_json FROM sessions WHERE id = ?",
                 (session_id,),
             )
             row = cursor.fetchone()
@@ -157,13 +181,16 @@ class SessionStorage:
                 "highlights": json.loads(row[6] or "[]"),
                 "prompt_highlight": row[7] if len(row) > 7 and row[7] is not None else "",
                 "prompt_image": row[8] if len(row) > 8 and row[8] is not None else "",
+                "active_audio_preset_id": row[9] if len(row) > 9 and row[9] is not None else "",
+                "active_vision_preset_id": row[10] if len(row) > 10 and row[10] is not None else "",
+                "preset_prompts": json.loads(row[11] or "{}") if len(row) > 11 and row[11] else {},
             }
 
     def list_sessions(self) -> List[Dict[str, Any]]:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, title, created_at, updated_at, notes, prompt_highlight, prompt_image FROM sessions ORDER BY updated_at DESC, created_at DESC"
+                "SELECT id, title, created_at, updated_at, notes, prompt_highlight, prompt_image, active_audio_preset_id, active_vision_preset_id, preset_prompts_json FROM sessions ORDER BY updated_at DESC, created_at DESC"
             )
             rows = cursor.fetchall()
             return [
@@ -174,6 +201,9 @@ class SessionStorage:
                     "updated_at": r[3],
                     "notes_preview": (r[4] or "")[:80],
                     "has_custom_prompts": bool((r[5] and r[5].strip()) or (r[6] and r[6].strip())),
+                    "active_audio_preset_id": r[7] if len(r) > 7 and r[7] is not None else "",
+                    "active_vision_preset_id": r[8] if len(r) > 8 and r[8] is not None else "",
+                    "preset_prompts": json.loads(r[9] or "{}") if len(r) > 9 and r[9] else {},
                 }
                 for r in rows
             ]
@@ -187,6 +217,9 @@ class SessionStorage:
         highlights: Optional[List[Dict[str, Any]]] = None,
         prompt_highlight: Any = _SENTINEL,
         prompt_image: Any = _SENTINEL,
+        active_audio_preset_id: Any = _SENTINEL,
+        active_vision_preset_id: Any = _SENTINEL,
+        preset_prompts: Any = _SENTINEL,
     ) -> bool:
         now = time.time()
         updates = ["updated_at = ?"]
@@ -209,6 +242,15 @@ class SessionStorage:
         if prompt_image is not _SENTINEL:
             updates.append("prompt_image = ?")
             params.append(prompt_image)
+        if active_audio_preset_id is not _SENTINEL:
+            updates.append("active_audio_preset_id = ?")
+            params.append(active_audio_preset_id)
+        if active_vision_preset_id is not _SENTINEL:
+            updates.append("active_vision_preset_id = ?")
+            params.append(active_vision_preset_id)
+        if preset_prompts is not _SENTINEL:
+            updates.append("preset_prompts_json = ?")
+            params.append(json.dumps(preset_prompts or {}))
         params.append(session_id)
 
         with self._lock:

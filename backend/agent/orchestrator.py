@@ -3,6 +3,7 @@ import re
 import time
 from typing import Dict, Any, List, Optional
 from backend.agent.tools import execute_math, execute_tool
+from backend.agent.presets import MultiSourceSecurityGuardrail
 
 DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION = (
     "You are an ambient Copilot embedded in a live meeting (like Granola and Antigravity).\n"
@@ -73,6 +74,7 @@ class AgentOrchestrator:
         is_hotkey: bool = True,
         segment_ids: Optional[List[str]] = None,
         custom_system_instruction: Optional[str] = None,
+        custom_user_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Processes either an audio lookback excerpt or a direct user text prompt.
@@ -132,17 +134,26 @@ class AgentOrchestrator:
                 thought = "Analyzing speech context via Google Antigravity Agent..."
                 custom_clean = (custom_system_instruction or "").strip()
                 if custom_clean:
-                    system_instruction = custom_clean
+                    base_instruction = custom_clean
                     instruction_mode = "Custom Session Persona"
                 else:
-                    system_instruction = DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION
+                    base_instruction = DEFAULT_HIGHLIGHT_SYSTEM_INSTRUCTION
                     instruction_mode = "Default Ambient Copilot"
+
+                # Apply Multi-Source Security Guardrail envelope
+                system_instruction = MultiSourceSecurityGuardrail.build_guarded_system_instruction(base_instruction)
+
+                # Determine prompt payload: custom user prompt template vs default meeting prompt
+                if custom_user_prompt and custom_user_prompt.strip():
+                    user_message_text = custom_user_prompt.strip()
+                else:
+                    user_message_text = f"Explain or answer this meeting topic:\n{text_excerpt}"
 
                 print("\n" + "=" * 70, flush=True)
                 print(">>> [AI AGENT REQUEST: TEXT INTENT] >>>", flush=True)
                 print(f"  Model: gemini-3.8-flash", flush=True)
                 print(f"  Topic / Query: {text_excerpt}", flush=True)
-                print(f"  Instruction Source: {instruction_mode}", flush=True)
+                print(f"  Instruction Source: {instruction_mode} (Guarded)", flush=True)
                 print(f"  Parameters: temperature=0.3", flush=True)
                 print(f"  System Instruction:\n    {system_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
                 print("=" * 70, flush=True)
@@ -157,18 +168,18 @@ class AgentOrchestrator:
                             temperature=0.3,
                         ),
                     )
-                    resp = chat.send_message(f"Explain or answer this meeting topic:\n{text_excerpt}")
+                    resp = chat.send_message(user_message_text)
                     content = resp.text
                 elif hasattr(self._sdk_agent, "generate_content"):
                     resp = self._sdk_agent.generate_content(
                         model="gemini-3.8-flash",
-                        contents=f"{system_instruction}\n\nMeeting topic:\n{text_excerpt}",
+                        contents=f"{system_instruction}\n\n{user_message_text}",
                     )
                     content = resp.text
                 elif hasattr(self._sdk_agent, "models"):
                     resp = self._sdk_agent.models.generate_content(
                         model="gemini-3.8-flash",
-                        contents=f"{system_instruction}\n\nMeeting topic:\n{text_excerpt}",
+                        contents=f"{system_instruction}\n\n{user_message_text}",
                     )
                     content = resp.text
                 else:
@@ -306,11 +317,13 @@ class AgentOrchestrator:
 
                 custom_clean = (custom_system_instruction or "").strip()
                 if custom_clean:
-                    vision_instruction = custom_clean
+                    base_instruction = custom_clean
                     instruction_mode = "Custom Session Persona"
                 else:
-                    vision_instruction = DEFAULT_VISION_SYSTEM_INSTRUCTION
+                    base_instruction = DEFAULT_VISION_SYSTEM_INSTRUCTION
                     instruction_mode = "Default Ambient Multimodal"
+
+                vision_instruction = MultiSourceSecurityGuardrail.build_guarded_system_instruction(base_instruction)
 
                 print("\n" + "=" * 70, flush=True)
                 print(">>> [AI AGENT REQUEST: VISION ANALYSIS] >>>", flush=True)
@@ -318,7 +331,7 @@ class AgentOrchestrator:
                 print(f"  Target: {target_name}", flush=True)
                 print(f"  Image: {image_path} (Optimized Payload: {ai_img.width}x{ai_img.height})", flush=True)
                 print(f"  User Prompt: {prompt if prompt else 'Default analysis'}", flush=True)
-                print(f"  Instruction Source: {instruction_mode}", flush=True)
+                print(f"  Instruction Source: {instruction_mode} (Guarded)", flush=True)
                 print(f"  Parameters: temperature=0.3", flush=True)
                 print(f"  System Instruction:\n    {vision_instruction.replace(chr(10), chr(10) + '    ')}", flush=True)
                 print("=" * 70, flush=True)

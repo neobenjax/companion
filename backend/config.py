@@ -6,6 +6,9 @@ from typing import Optional, Dict, Any
 DEFAULT_CONFIG: Dict[str, Any] = {
     "audio_intent_hotkey": "<ctrl>+<shift>+a",
     "vision_intent_hotkey": "<ctrl>+<shift>+v",
+    "preset_switcher_hotkey": "<ctrl>+p",
+    "default_audio_preset_id": "default-audio-ambient",
+    "default_vision_preset_id": "default-vision-ambient",
     "lookback_duration_sec": 10,
     "lookback_words": 50,
     "whisper_model": "small.en",
