@@ -24,6 +24,16 @@ def build():
         "--clean",
         "--noconfirm",
         f"--add-data={dist_frontend};frontend/dist",
+        f"--splash={root / 'assets' / 'splash.png'}",
+        "--exclude-module=torch",
+        "--exclude-module=torchvision",
+        "--exclude-module=torchaudio",
+        "--exclude-module=google.genai.tests",
+        "--exclude-module=pytest",
+        "--exclude-module=unittest",
+        "--exclude-module=tkinter",
+        "--exclude-module=matplotlib",
+        "--exclude-module=scipy",
         "--collect-all=pythonnet",
         "--collect-all=clr_loader",
         "--collect-all=webview",
@@ -55,7 +65,7 @@ def build():
     if not exe_file.exists():
         raise RuntimeError(f"Expected executable {exe_file} was not produced!")
 
-    # Step 2.1: Ensure root folder contains Python runtime DLLs alongside AmbientCopilot.exe
+    # Step 2.1: Ensure root folder contains Python runtime DLLs and .NET config alongside AmbientCopilot.exe
     # This guarantees that .NET CLR and Win32 LoadLibrary find pythonXX.dll on clean Windows machines
     internal_dir = output_dir / "_internal"
     if internal_dir.exists():
@@ -66,6 +76,12 @@ def build():
                 if not target_dest.exists():
                     shutil.copy2(dll_file, target_dest)
                     print(f"  - Placed in root: {dll_file.name}", flush=True)
+
+    # Step 2.2: Copy AmbientCopilot.exe.config to root folder
+    config_src = root / "AmbientCopilot.exe.config"
+    if config_src.exists():
+        shutil.copy2(config_src, output_dir / "AmbientCopilot.exe.config")
+        print("  - Placed in root: AmbientCopilot.exe.config (loadFromRemoteSources enabled)", flush=True)
 
     print(f"\n[Build] SUCCESS: Binary executable created at: {exe_file}", flush=True)
 

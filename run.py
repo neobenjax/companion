@@ -4,10 +4,56 @@ import subprocess
 import time
 from pathlib import Path
 
+_SINGLE_INSTANCE_MUTEX = None
+
+
+def _check_single_instance_and_unblock():
+    global _SINGLE_INSTANCE_MUTEX
+    if sys.platform != "win32":
+        return
+
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+
+    # 1. Single-instance mutex check
+    MUTEX_NAME = "Global\\AmbientCopilot_SingleInstance_Mutex"
+    ERROR_ALREADY_EXISTS = 183
+    _SINGLE_INSTANCE_MUTEX = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        hwnd = user32.FindWindowW(None, "Ambient Copilot")
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+        try:
+            import pyi_splash
+            if pyi_splash.is_alive():
+                pyi_splash.close()
+        except Exception:
+            pass
+        sys.exit(0)
+
+    # 2. Self-unblock runtime files (strip NTFS Zone.Identifier / Mark of the Web)
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).parent
+        target_exts = {".dll", ".exe", ".config"}
+        for scan_dir in [exe_dir, exe_dir / "_internal"]:
+            if not scan_dir.exists():
+                continue
+            for root, _, files in os.walk(scan_dir):
+                for f in files:
+                    if any(f.lower().endswith(ext) for ext in target_exts):
+                        stream_path = os.path.join(root, f) + ":Zone.Identifier"
+                        kernel32.DeleteFileW(stream_path)
+
+
 # CRITICAL for frozen PyInstaller builds on clean Windows machines:
-# Explicitly resolve and configure the Python C-runtime DLL for pythonnet (clr / clr_loader)
-# and ensure _internal is registered with Windows SetDllDirectory and PATH.
+# 1. Ensure single-instance execution and unblock Mark-of-the-Web files
+# 2. Explicitly resolve and configure Python C-runtime DLL for pythonnet (clr / clr_loader)
+# 3. Ensure _internal and exe_dir are registered with Windows SetDllDirectory and PATH.
 if getattr(sys, "frozen", False) and sys.platform == "win32":
+    _check_single_instance_and_unblock()
+
     exe_dir = Path(sys.executable).parent
     meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
     py_dll_name = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
@@ -18,14 +64,14 @@ if getattr(sys, "frozen", False) and sys.platform == "win32":
             os.environ["PYTHONNET_PYDLL"] = str(candidate_dll.resolve())
             break
 
-    for candidate_dir in [exe_dir / "_internal", meipass, exe_dir]:
-        if candidate_dir.exists():
-            os.environ["PATH"] = str(candidate_dir.resolve()) + os.pathsep + os.environ.get("PATH", "")
-            try:
-                import ctypes
-                ctypes.windll.kernel32.SetDllDirectoryW(str(candidate_dir.resolve()))
-            except Exception:
-                pass
+    internal_dir = exe_dir / "_internal"
+    dll_dir = internal_dir if internal_dir.exists() else exe_dir
+    os.environ["PATH"] = str(exe_dir.resolve()) + os.pathsep + str(dll_dir.resolve()) + os.pathsep + os.environ.get("PATH", "")
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetDllDirectoryW(str(dll_dir.resolve()))
+    except Exception:
+        pass
 
 
 def ensure_default_desktop():

@@ -114,6 +114,15 @@ def start_native_app():
     bridge._set_window(window)
 
     def on_window_ready():
+        # Close PyInstaller native splash screen if present
+        try:
+            import pyi_splash
+            if pyi_splash.is_alive():
+                pyi_splash.close()
+                print("[Desktop] Native splash screen closed.", flush=True)
+        except Exception:
+            pass
+
         print("\n" + "=" * 65, flush=True)
         print("   >>> AMBIENT COPILOT WINDOW IS VISIBLE ON SCREEN <<<   ", flush=True)
         print("=" * 65, flush=True)
@@ -137,6 +146,12 @@ def start_native_app():
             gui="edgechromium",
         )
     finally:
+        try:
+            import pyi_splash
+            if pyi_splash.is_alive():
+                pyi_splash.close()
+        except Exception:
+            pass
         print("[Desktop] Window closed, cleaning up background workers...", flush=True)
         try:
             bridge.stop_recording()

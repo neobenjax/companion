@@ -343,8 +343,63 @@
 - [x] Publish GitHub Release `v0.6.1` with zip binary asset attached
 - [x] Purge `feature/fix-standalone-runtime-dll` branch locally and remotely
 
+## Phase 12: Mark-of-the-Web .NET Resolution, Instant Startup Feedback & Size Reduction
+### Subtask 12.1: Specification & Implementation Plan
+- [x] Diagnose root cause of `Python.Runtime.Loader.Initialize` failure in Downloads directory (Zone.Identifier Mark of the Web)
+- [x] Create detailed Implementation Plan (`implementation_plan.md`) covering unblocker, .NET config, splash screen, and single-instance mutex
+- [x] Align with user on implementation plan and include size reduction (torch removal)
 
+### Subtask 12.2: .NET CLR Configuration & Self-Unblocking
+- [x] Create `AmbientCopilot.exe.config` enabling `<loadFromRemoteSources enabled="true"/>`
+- [x] Add automatic fast Win32 `DeleteFileW` unblocker for `:Zone.Identifier` streams in `run.py`
+- [x] Verify CLR assembly resolution on files tagged with Mark of the Web
 
+### Subtask 12.3: Instant Visual Feedback & Single-Instance Mutex
+- [x] Create branded high-DPI splash screen image (`assets/splash.png`)
+- [x] Integrate `--splash` bootloader parameter into `build_exe.py`
+- [x] Add `pyi_splash.close()` to `backend/desktop.py` upon window initialization
+- [x] Implement Win32 Named Mutex (`Global\AmbientCopilot_SingleInstance_Mutex`) in `run.py` to prevent duplicate processes and activate running instance
 
+### Subtask 12.4: Size Reduction & Startup Latency Optimization
+- [x] Remove `torch` dependency from `pyproject.toml` and update `uv.lock`
+- [x] Exclude `torch`, `torchvision`, `torchaudio`, `google.genai.tests` in `build_exe.py`
+- [x] Verify `_internal` size shrinks by ~328 MB (>54% reduction) and `.zip` package size drops to 120 MB (52% smaller)
 
+### Subtask 12.5: Verification, Walkthrough & User Approval
+- [x] Run test suite (`uv run pytest tests/` - all 21 passed)
+- [x] Rebuild standalone executable with splash screen and test zone-blocked simulation
+- [x] Prepare Walkthrough testing guide (`walkthrough.md`)
+- [ ] Await user review and approval before proceeding with git release workflow
 
+## Phase 13: Prompt Preset Engine & Dynamic Variable Injection
+### Subtask 13.1: Specification, Planning & User Alignment
+- [/] Design PromptPreset schema and dynamic variable interpolation engine (`{{selected_text}}`, `{{full_transcript_recent}}`, `{{window_title}}`, `{{process_name}}`, `{{timestamp}}`)
+- [/] Draft system security guardrails against malicious meta-prompting and system prompt override
+- [x] Create Implementation Plan artifact (`prompt_preset_engine.md`)
+- [/] Align with user on implementation plan and check for missing details
+
+### Subtask 13.2: Backend Preset Engine & Security Guardrails
+- [ ] Implement `backend/agent/presets.py` with `PromptPreset`, `PresetStore`, and `BUILTIN_PRESETS`
+- [ ] Add Configuration A (`interview-audio-speech`) and Configuration B (`interview-vision-code-eval`)
+- [ ] Implement `SecurityGuardrail` with immutable system boundary and XML untrusted data fencing
+- [ ] Implement `VariableInterpolator` with safe context extraction from audio ring buffer and active Win32 window
+- [ ] Implement `ContextResolver` for process matching (`targetAppPatterns`) and active window detection
+
+### Subtask 13.3: Bridge Integration & Agent Orchestrator Updates
+- [ ] Update `AgentOrchestrator` to accept resolved presets and safe interpolated prompt payloads
+- [ ] Add IPC bridge methods (`get_presets`, `save_preset`, `delete_preset`, `get_active_preset`, `set_active_preset`, `detect_active_context`, `render_preset_preview`)
+- [ ] Wire audio intent and vision queries through preset engine
+
+### Subtask 13.4: Frontend UI Integration (Low Cognitive Load & Power User Tools)
+- [ ] Define TypeScript interfaces (`PromptPreset`, `PresetCategory`, `ActiveContextInfo`) in `types/index.ts`
+- [ ] Add bridge service wrappers in `services/pywebview.ts`
+- [ ] Build `PresetQuickSelector` compact pill component with dropdown and `Ctrl+P` hotkey
+- [ ] Build `AutoDetectionBanner` subtle non-intrusive notification chip with one-click Undo
+- [ ] Enhance `SessionPromptModal` into full Preset & Prompt Manager with dynamic variable insertion chips and live preview
+
+### Subtask 13.5: Testing, Verification & Walkthrough Guide
+- [ ] Create automated unit tests for preset loading, variable interpolation, and prompt injection defense
+- [ ] Create automated integration tests for bridge IPC preset operations
+- [ ] Build frontend and verify zero compilation errors
+- [ ] Execute manual verification scenarios (ambient default, verbal interview, vision coding assessment, guardrails)
+- [ ] Prepare comprehensive Walkthrough Guide (`walkthrough.md`) and await user review & approval

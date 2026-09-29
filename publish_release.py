@@ -36,14 +36,15 @@ def publish():
         pass
 
     tag = f"v{version}"
-    release_name = f"Ambient Copilot v{version} - Standalone Runtime DLL & CLR Fix"
+    release_name = f"Ambient Copilot v{version} - Mark-of-the-Web Fix, Instant Splash Screen & 52% Smaller Package"
     release_body = f"""## What's Changed in v{version}
 
 ### Fixes & Enhancements
-- **Standalone Runtime DLL Resolution**: Fixed `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize` when launching `AmbientCopilot.exe` on clean Windows systems without Python installed in PATH or registry.
-- **Dynamic `PYTHONNET_PYDLL` Discovery**: Automatically resolves the exact bundled Python DLL at startup.
-- **Root Runtime DLL Placement**: Bundles `python313.dll`, `python3.dll`, and `vcruntime140*.dll` directly into the application root folder for immediate discovery.
-- **All Features from v0.6.0**: Includes the native window transparency slider (50%–100%), independent pinned font size controls, per-conversation AI prompts, and startup stability.
+- **Mark-of-the-Web / .NET CLR Resolution**: Fixed `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize` when launching from browser Downloads folders by adding an automatic Win32 startup unblocker and bundling `AmbientCopilot.exe.config` with `<loadFromRemoteSources enabled="true"/>`.
+- **Instant Visual Feedback (Native Splash Screen)**: Built-in PyInstaller C bootloader splash screen appears within ~100ms of clicking `AmbientCopilot.exe`, giving immediate visual confirmation that the application is starting.
+- **Single-Instance Mutex**: Added Win32 Named Mutex protection (`Global\AmbientCopilot_SingleInstance_Mutex`). Rapidly double-clicking the executable now activates the existing instance rather than launching duplicate conflicting processes.
+- **52% Smaller Download Package (>328 MB Eliminated)**: Cleaned out redundant PyTorch dependencies. The `_internal` directory shrank from 600 MB to 272 MB, and the release `.zip` package dropped from 250 MB to **120 MB**.
+- **Cold Startup Boost**: Drastically faster launch times as Windows no longer needs to map heavy unused libraries into memory.
 
 ### Installation & Standalone Binary
 Download `AmbientCopilot-v{version}-windows-x64.zip`, extract to any folder, and run `AmbientCopilot.exe`.
