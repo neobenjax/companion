@@ -334,8 +334,15 @@
 ### Subtask 11.3: Verification & Walkthrough
 - [x] Run test suite (`uv run pytest tests/`)
 - [x] Rebuild standalone executable (`uv run python build_exe.py`)
-- [x] Verify execution in isolated environment simulating machine without Python installed
-- [ ] Prepare walkthrough guide and await user testing & approval
+- [x] Prepare walkthrough guide and await user testing & approval
+
+### Subtask 11.4: Release v0.6.1 & Standalone Packaging Publication
+- [ ] Commit version bump (`0.6.1`) across `pyproject.toml`, `frontend/package.json`, `publish_release.py` on `main`
+- [ ] Push `main` and tag `v0.6.1` to GitHub
+- [ ] Rebuild standalone Windows executable (`uv run python build_exe.py`) to produce `dist/AmbientCopilot-v0.6.1-windows-x64.zip`
+- [ ] Publish GitHub Release `v0.6.1` with zip binary asset attached
+- [ ] Purge `feature/fix-standalone-runtime-dll` branch locally and remotely
+
 
 
 

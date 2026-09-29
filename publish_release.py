@@ -25,24 +25,28 @@ def publish():
 
     owner = "neobenjax"
     repo = "companion"
-    tag = "v0.6.0"
-    release_name = "Ambient Copilot v0.6.0 - Transparency Slider, Pinned Font Controls & Per-Session Prompts"
-    release_body = """## What's Changed in v0.6.0
+    root = Path(__file__).parent
+    version = "0.6.1"
+    try:
+        import tomllib
+        with open(root / "pyproject.toml", "rb") as f:
+            data = tomllib.load(f)
+            version = data.get("project", {}).get("version", version)
+    except Exception:
+        pass
 
-### Key Features & Enhancements
-- **Window Transparency Slider (50% – 100%)**: Smooth application opacity adjustment directly in the title bar allowing background windows to show through without losing legibility over other apps.
-- **Independent Always-On-Top Font Size Controls**:
-  - Pinned transcript session header that stays floating on top as you scroll through messages.
-  - Granular `+` / `-` font sizing controls for live transcripts and the AI sidepanel.
-- **Per-Conversation AI Prompts**:
-  - Tailor system instructions and persona per session note for highlights and vision screenshot queries, complete with preset chips and template previews.
-- **Startup Stability & UI Deadlock Resolution**:
-  - Eliminated intermittent cold start freeze and blank note flash.
-  - Thread-safe non-blocking WinForms window styling and resilient IPC initialization.
-  - Automatic restoration of your last opened active note.
+    tag = f"v{version}"
+    release_name = f"Ambient Copilot v{version} - Standalone Runtime DLL & CLR Fix"
+    release_body = f"""## What's Changed in v{version}
+
+### Fixes & Enhancements
+- **Standalone Runtime DLL Resolution**: Fixed `RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize` when launching `AmbientCopilot.exe` on clean Windows systems without Python installed in PATH or registry.
+- **Dynamic `PYTHONNET_PYDLL` Discovery**: Automatically resolves the exact bundled Python DLL at startup.
+- **Root Runtime DLL Placement**: Bundles `python313.dll`, `python3.dll`, and `vcruntime140*.dll` directly into the application root folder for immediate discovery.
+- **All Features from v0.6.0**: Includes the native window transparency slider (50%–100%), independent pinned font size controls, per-conversation AI prompts, and startup stability.
 
 ### Installation & Standalone Binary
-Download `AmbientCopilot-v0.6.0-windows-x64.zip`, extract to any folder, and run `AmbientCopilot.exe`.
+Download `AmbientCopilot-v{version}-windows-x64.zip`, extract to any folder, and run `AmbientCopilot.exe`.
 """
 
     headers = {
@@ -84,7 +88,7 @@ Download `AmbientCopilot-v0.6.0-windows-x64.zip`, extract to any folder, and run
             raise
 
     release_id = release["id"]
-    zip_file = Path(__file__).parent / "dist" / "AmbientCopilot-v0.6.0-windows-x64.zip"
+    zip_file = root / "dist" / f"AmbientCopilot-v{version}-windows-x64.zip"
     if not zip_file.exists():
         raise FileNotFoundError(f"{zip_file} not found")
 
