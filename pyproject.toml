@@ -1,6 +1,6 @@
 [project]
 name = "ambient-copilot"
-version = "0.6.2"
+version = "0.7.0"
 description = "Ambient Multimodal Windows Copilot combining Granola-style transcription with Antigravity 2.0 Agent"
 readme = "README.md"
 requires-python = ">=3.11"
